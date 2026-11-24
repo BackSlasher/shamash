@@ -35,6 +35,8 @@ data class SessionRecord(
     val appVersion: String,
     val config: ConfigInfo,
     val error: String?,
+    /** Machine-readable error type (e.g. `auth_error`, `http_422`, `network`, `timeout`); null when no error. */
+    val errorType: String? = null,
 ) {
     fun toJson(): String = CODEC.encodeToString(serializer(), this)
 

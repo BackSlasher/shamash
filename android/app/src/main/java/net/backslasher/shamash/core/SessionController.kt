@@ -33,6 +33,7 @@ import net.backslasher.shamash.storage.SessionRecord
 import net.backslasher.shamash.storage.SessionStore
 import net.backslasher.shamash.transcribe.StreamingSession
 import net.backslasher.shamash.transcribe.Transcriber
+import net.backslasher.shamash.transcribe.TranscriberError
 
 /**
  * The one state machine. Call methods from a single thread (the UI thread); [scope] should be
@@ -143,6 +144,7 @@ class SessionController(
         var batchRaw: String? = null
         var error: String? = null
         var errorKind = ErrorKind.GENERIC
+        var errorType: String? = null
         var cancelled = false
 
         try {
@@ -206,11 +208,12 @@ class SessionController(
             if (withTimeoutOrNull(2_000) { captureJob.join() } == null) captureJob.cancel()
             withContext(ioDispatcher) { w.close() }
 
-            val failure = captureError.get()?.let { "Microphone capture failed: ${describe(it)}" to ErrorKind.MICROPHONE }
-                ?: streamError.get()?.let { "Streaming failed: ${describe(it)}" to classify(it) }
+            val failure = captureError.get()?.let { Triple("Microphone capture failed: ${describe(it)}", ErrorKind.MICROPHONE, "microphone") }
+                ?: streamError.get()?.let { Triple("Streaming failed: ${describe(it)}", classify(it), errorTypeOf(it)) }
             if (failure != null) {
                 error = failure.first
                 errorKind = failure.second
+                errorType = failure.third
             } else {
                 try {
                     withTimeout(config.finalTimeoutMs) {
@@ -222,11 +225,13 @@ class SessionController(
                     stopToFinalMs = clock.elapsedMs() - stopAt
                 } catch (e: TimeoutCancellationException) {
                     error = "Timed out waiting for the final transcript (${config.finalTimeoutMs} ms)"
+                    errorType = "timeout"
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Exception) {
                     error = "Transcription failed: ${describe(e)}"
                     errorKind = classify(e)
+                    errorType = errorTypeOf(e)
                 }
             }
         } catch (e: CancellationException) {
@@ -235,6 +240,7 @@ class SessionController(
             throw e
         } catch (e: Exception) {
             error = "Unexpected error: ${describe(e)}"
+            errorType = errorTypeOf(e)
         } finally {
             withContext(NonCancellable) {
                 partialJob?.cancel()
@@ -264,6 +270,7 @@ class SessionController(
                                 config.languageCode, config.realtimeModelId, config.batchModelId, config.sampleRate,
                             ),
                             error = error,
+                            errorType = errorType,
                         )
                         try {
                             store.save(f, record)
@@ -287,5 +294,12 @@ class SessionController(
 
     private fun describe(e: Throwable): String = e.message?.takeIf { it.isNotBlank() } ?: e::class.java.simpleName
 
-    private fun classify(e: Throwable): ErrorKind = if (e is IOException) ErrorKind.NO_NETWORK else ErrorKind.GENERIC
+    /** Explicit mapping: providers flag connectivity errors via [TranscriberError]; bare IOExceptions count as network. */
+    private fun classify(e: Throwable): ErrorKind = when {
+        e is TranscriberError -> if (e.isNetwork) ErrorKind.NO_NETWORK else ErrorKind.GENERIC
+        e is IOException -> ErrorKind.NO_NETWORK
+        else -> ErrorKind.GENERIC
+    }
+
+    private fun errorTypeOf(e: Throwable): String = (e as? TranscriberError)?.errorType ?: e::class.java.simpleName
 }

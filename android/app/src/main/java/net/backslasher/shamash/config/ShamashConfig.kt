@@ -15,6 +15,8 @@ data class ShamashConfig(
     val batchModelId: String = "scribe_v3",
     val realtimeModelId: String = "scribe_v3_live",
     val appVersion: String = "dev",
+    /** True for UI work without network: uses FakeTranscriber instead of ElevenLabs. */
+    val useFakeTranscriber: Boolean = false,
 ) {
     companion object {
         val DEFAULT = ShamashConfig(appVersion = BuildConfig.VERSION_NAME)

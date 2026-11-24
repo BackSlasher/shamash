@@ -88,6 +88,7 @@ android {
     testOptions {
         unitTests {
             isIncludeAndroidResources = true
+            isReturnDefaultValues = true // android.util.Log etc. are no-ops in plain JVM tests
         }
     }
 
@@ -121,8 +122,15 @@ dependencies {
     implementation(libs.okhttp)
 
     testImplementation(libs.junit)
+    testImplementation(libs.okhttp.mockwebserver)
     testImplementation(libs.robolectric)
     testImplementation(libs.androidx.test.core)
     testImplementation(libs.androidx.test.ext.junit)
     testImplementation(libs.kotlinx.coroutines.test)
+}
+
+// Live API test is opt-in: -PliveApi=true plus ELEVENLABS_KEY in the environment (build.sh passes it from .env).
+tasks.withType<Test>().configureEach {
+    systemProperty("shamash.liveApi", providers.gradleProperty("liveApi").orNull ?: "false")
+    providers.environmentVariable("ELEVENLABS_KEY").orNull?.let { environment("ELEVENLABS_KEY", it) }
 }

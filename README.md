@@ -55,6 +55,11 @@ Server messages, all keyed by `message_type`:
 - `warning` `{ "warning" }`
 - Errors: `{ "message_type": "<type>", "error": "<text>" }` where type is one of `error`, `auth_error`, `quota_exceeded`, `commit_throttled`, `unaccepted_terms`, `rate_limited`, `queue_overflow`, `resource_exhausted`, `session_time_limit_exceeded`, `input_error`, `invalid_request`, `chunk_size_exceeded`, `insufficient_audio_activity`, `transcriber_error`. An error is sent before the socket closes.
 
+Observed live (2026-11-25):
+
+- **Partials are cumulative.** Each `partial_transcript` carries the full text of the current segment so far: replace, never append. The app concatenates committed segments (space-separated) in front of the running partial.
+- **The client must close the socket.** The server does not close after `committed_transcript`; the app closes with code 1000. Scribe returns `session_started` about 0.3 s after connect and the first partial about 0.5 s after audio starts.
+
 Realtime concurrency on the Free plan is 6 sessions; irrelevant for one phone.
 
 ### Android device owner and kiosk
@@ -122,9 +127,25 @@ adb pull /sdcard/Android/data/net.backslasher.shamash/files/recordings ./recordi
 
 (`/sdcard` is the same as `/storage/emulated/0`.) Nothing is ever deleted automatically.
 
+### Live API test and tools
+
+The unit tests never touch the network. One opt-in live test streams `tools/fixtures/hebrew_v3.wav` through the realtime API and the batch API and checks the Hebrew text (needs the key in `.env`):
+
+```
+./build.sh testDebugUnitTest -PliveApi=true --tests '*ElevenLabsLiveTest*'
+```
+
+`tools/rt_smoke.py` is a Python realtime smoke test (needs the `websockets` package):
+
+```
+set -a; . .env; set +a; python3 tools/rt_smoke.py tools/fixtures/hebrew_v3.wav
+```
+
+See `tools/fixtures/README.md` for the fixture.
+
 ### Current status
 
-Stages 1-2: the transcriber is a `FakeTranscriber` (fake Hebrew partials and final, no network). The real ElevenLabs transcriber replaces it in `ShamashViewModel`.
+`ElevenLabsTranscriber` (realtime partials + batch final) is wired into `ShamashViewModel`. Set `ShamashConfig.useFakeTranscriber = true` to use `FakeTranscriber` for UI work without network. Logs use tag `Shamash`.
 
 ## Provisioning and kiosk
 

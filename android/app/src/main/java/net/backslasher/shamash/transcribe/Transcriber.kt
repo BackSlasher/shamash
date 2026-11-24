@@ -25,3 +25,15 @@ interface StreamingSession {
 
 /** [raw] is the provider's raw JSON response. */
 data class BatchResult(val text: String, val raw: String)
+
+/**
+ * Implemented by exceptions a [Transcriber] throws, so the controller can classify them explicitly
+ * instead of guessing from the exception class.
+ */
+interface TranscriberError {
+    /** Short machine-readable type, stored in the session JSON (e.g. `auth_error`, `http_422`, `network`). */
+    val errorType: String
+
+    /** True when the cause is connectivity (no network, DNS, TLS, timeout, stalled socket): shown as NO_NETWORK. */
+    val isNetwork: Boolean
+}
