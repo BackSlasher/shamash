@@ -1,0 +1,36 @@
+package net.backslasher.shamash.kiosk
+
+import android.app.admin.DevicePolicyManager
+import android.content.ComponentName
+import android.content.Context
+import androidx.test.core.app.ApplicationProvider
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
+import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.Shadows.shadowOf
+import org.robolectric.annotation.Config
+
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [34])
+class KioskPolicyTest {
+    private val context: Context = ApplicationProvider.getApplicationContext()
+    private val dpm get() = context.getSystemService(DevicePolicyManager::class.java)
+
+    @Test
+    fun notDeviceOwnerIsNoOp() {
+        assertFalse(KioskPolicy.isDeviceOwner(context))
+        KioskPolicy.applyIfDeviceOwner(context) // must not throw
+        assertFalse(dpm.isLockTaskPermitted(context.packageName))
+    }
+
+    @Test
+    fun deviceOwnerGetsLockTaskPackage() {
+        val admin = ComponentName(context, ShamashAdminReceiver::class.java)
+        shadowOf(dpm).setDeviceOwner(admin)
+        assertTrue(KioskPolicy.isDeviceOwner(context))
+        KioskPolicy.applyIfDeviceOwner(context) // failing steps are logged, never thrown
+        assertTrue(dpm.isLockTaskPermitted(context.packageName))
+    }
+}
