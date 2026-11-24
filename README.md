@@ -94,6 +94,7 @@ Prerequisite: `podman` only. The JDK, Android SDK and Gradle live in the build i
 ```
 ./build.sh                  # runs testDebugUnitTest + assembleDebug
 ./build.sh assembleRelease  # any arguments are passed to Gradle
+./build.sh assembleDebug -PfakeTranscriber=true  # debug APK that never calls ElevenLabs, for testing the mic/WAV path offline
 ```
 
 The first run builds the image `localhost/shamash-android-build:<hash>` (a few minutes); Gradle caches live in the podman volume `shamash-gradle-cache`.

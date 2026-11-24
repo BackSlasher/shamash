@@ -15,6 +15,9 @@ fun config(name: String): String? =
 val shamashVersionName: String = config("SHAMASH_VERSION_NAME") ?: "0.1.0"
 val shamashVersionCode: Int = config("SHAMASH_VERSION_CODE")?.toInt() ?: 1
 
+// -PfakeTranscriber=true builds an APK that never calls ElevenLabs.
+val fakeTranscriber: Boolean = config("fakeTranscriber")?.toBoolean() ?: false
+
 // ElevenLabs key: environment ELEVENLABS_KEY first, then elevenlabs.key in android/local.properties.
 val elevenLabsKey: String = run {
     val fromEnv = providers.environmentVariable("ELEVENLABS_KEY").orNull?.takeIf { it.isNotBlank() }
@@ -45,6 +48,7 @@ android {
         versionCode = shamashVersionCode
         versionName = shamashVersionName
         buildConfigField("String", "ELEVENLABS_KEY", "\"$elevenLabsKey\"")
+        buildConfigField("boolean", "FAKE_TRANSCRIBER", fakeTranscriber.toString())
     }
 
     signingConfigs {
