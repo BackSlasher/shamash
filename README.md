@@ -89,7 +89,7 @@ Sources: `developer.android.com/work/dpc/dedicated-devices/{lock-task-mode,cookb
 
 ## Build
 
-Prerequisite: `podman` only. Nothing else is installed on the host (JDK, Android SDK and Gradle live in the build image).
+Prerequisite: `podman` only. The JDK, Android SDK and Gradle live in the build image.
 
 ```
 ./build.sh                  # runs testDebugUnitTest + assembleDebug
@@ -98,55 +98,142 @@ Prerequisite: `podman` only. Nothing else is installed on the host (JDK, Android
 
 The first run builds the image `localhost/shamash-android-build:<hash>` (a few minutes); Gradle caches live in the podman volume `shamash-gradle-cache`.
 
-Output: `android/app/build/outputs/apk/debug/app-debug.apk`.
+Outputs:
+
+- debug: `android/app/build/outputs/apk/debug/app-debug.apk` (`testOnly`, debug-signed)
+- release: `android/app/build/outputs/apk/release/app-release.apk` when signed, `app-release-unsigned.apk` without a keystore (R8 minification is on; rules in `android/app/proguard-rules.pro`)
 
 ### API key
 
-The build fails with a clear message unless the ElevenLabs key is provided, either as
+The build fails unless the ElevenLabs key is provided, either as
 
 - `ELEVENLABS_KEY=...` in `<repo>/.env` (`build.sh` sources it and passes it into the container), or
 - `elevenlabs.key=...` in `android/local.properties`.
 
-Both files are git-ignored. The key is compiled into `BuildConfig.ELEVENLABS_KEY`; never print or commit it.
-
-### Install on the phone (manual, not part of the build)
-
-The debug APK is `testOnly` (so device owner can be removed over adb later), so it needs `-t`:
-
-```
-adb install -t -r android/app/build/outputs/apk/debug/app-debug.apk
-```
-
-### Pulling recordings
-
-Each session writes `<yyyyMMdd-HHmmss>.wav` (16 kHz mono 16-bit PCM) and a `.json` sidecar into `getExternalFilesDir(null)/recordings`, i.e.
-
-```
-adb pull /sdcard/Android/data/net.backslasher.shamash/files/recordings ./recordings
-```
-
-(`/sdcard` is the same as `/storage/emulated/0`.) Nothing is ever deleted automatically.
+Both are git-ignored. The key is compiled into `BuildConfig.ELEVENLABS_KEY`; never print or commit it.
 
 ### Live API test and tools
 
-The unit tests never touch the network. One opt-in live test streams `tools/fixtures/hebrew_v3.wav` through the realtime API and the batch API and checks the Hebrew text (needs the key in `.env`):
+Unit tests never touch the network. One opt-in live test streams `tools/fixtures/hebrew_v3.wav` through the realtime and batch APIs (needs the key in `.env`):
 
 ```
 ./build.sh testDebugUnitTest -PliveApi=true --tests '*ElevenLabsLiveTest*'
 ```
 
-`tools/rt_smoke.py` is a Python realtime smoke test (needs the `websockets` package):
+`tools/rt_smoke.py` is a Python realtime smoke test (needs the `websockets` package): `set -a; . .env; set +a; python3 tools/rt_smoke.py tools/fixtures/hebrew_v3.wav`. See `tools/fixtures/README.md`.
+
+Set `ShamashConfig.useFakeTranscriber = true` for UI work without network. Logs use tag `Shamash`.
+
+## Install for development (ordinary app)
+
+The debug APK is `testOnly`, so it needs `-t`:
 
 ```
-set -a; . .env; set +a; python3 tools/rt_smoke.py tools/fixtures/hebrew_v3.wav
+adb install -t -r android/app/build/outputs/apk/debug/app-debug.apk
 ```
 
-See `tools/fixtures/README.md` for the fixture.
+Without device owner the app is an ordinary app: it hides the system bars (immersive) but never calls `startLockTask()`, so there is no screen-pinning dialog. The first run asks for the microphone.
 
-### Current status
+## Provision a fresh phone as kiosk
 
-`ElevenLabsTranscriber` (realtime partials + batch final) is wired into `ShamashViewModel`. Set `ShamashConfig.useFakeTranscriber = true` to use `FakeTranscriber` for UI work without network. Logs use tag `Shamash`.
+1. Factory reset the phone.
+2. In the setup wizard connect to Wi-Fi (the app needs it) but do **not** add a Google account; skip everything else.
+3. Settings > About phone: tap Build number 7 times. Then Developer options > enable USB debugging.
+4. Connect USB, run `adb devices`, accept the RSA (Rivest-Shamir-Adleman) key prompt on the phone; the device must show as `device`, not `unauthorized`.
+5. `adb install -t -r android/app/build/outputs/apk/debug/app-debug.apk`
+6. `adb shell dpm set-device-owner net.backslasher.shamash/.kiosk.ShamashAdminReceiver`
+   Expected output:
+   ```
+   Success: Device owner set to package ComponentInfo{net.backslasher.shamash/net.backslasher.shamash.kiosk.ShamashAdminReceiver}
+   Active admin set to component {net.backslasher.shamash/net.backslasher.shamash.kiosk.ShamashAdminReceiver}
+   ```
+   If it fails with `Not allowed to set the device owner because there are already some accounts on the device`, remove the account (Settings > Passwords & accounts) or factory reset again and skip account setup.
+7. `adb shell am start -n net.backslasher.shamash/.MainActivity` (or press Home and choose Shamash "Always"). On launch the app applies its policies and enters lock task mode; the microphone is pre-granted, so no dialog.
+8. `adb reboot` and confirm the phone comes up directly in the app.
 
-## Provisioning and kiosk
+`adb shell dpm` prints its own help; it documents that `remove-active-admin` only works for `testOnly` apps. `adb shell dpm` is the authority if this README drifts.
 
-TODO (launcher, device owner, lock task, removal command: later task).
+## Pull recordings
+
+```
+adb pull /sdcard/Android/data/net.backslasher.shamash/files/recordings ./recordings
+```
+
+Each session writes `<yyyyMMdd-HHmmss>.wav` (16 kHz mono 16-bit PCM) and a `.json` sidecar. Nothing is deleted automatically. On first launch the app also writes `device-info.json` (model, Android release, SDK_INT, app version, device-owner and lock-task flags, and whether the on-device recogniser offers `he-IL`; informational only).
+
+Sidecar fields (`storage/SessionRecord.kt`):
+
+| field | meaning |
+|---|---|
+| `timestamp` | session start, ISO-8601 with UTC offset |
+| `durationMs` | length of the captured audio in milliseconds |
+| `partials[]` | live partials as `{tMs, text}`; `tMs` is time since start, `text` is the cumulative text at that moment |
+| `realtimeFinal` | final text from the realtime stream (committed segments), or null |
+| `batchText` | final text from the batch API, or null |
+| `batchRaw` | raw JSON of the batch response, kept for analysis |
+| `latency.firstPartialMs` | start to first partial, or null |
+| `latency.stopToFinalMs` | stop tap to final text, or null |
+| `appVersion` | `versionName` of the build |
+| `config.languageCode` / `realtimeModelId` / `batchModelId` / `sampleRate` | the settings used for the session |
+| `error` | human-readable error, or null |
+| `errorType` | machine-readable error (`network`, `timeout`, `auth_error`, `http_422`, ...), or null |
+
+## Remove device owner / leave kiosk (debug builds only)
+
+```
+adb shell dpm remove-active-admin net.backslasher.shamash/.kiosk.ShamashAdminReceiver
+adb shell am force-stop net.backslasher.shamash
+adb uninstall net.backslasher.shamash      # optional
+```
+
+If the lock task is still active after this, press Home or run `force-stop` again. The persistent HOME preference is cleared together with the owner; the phone then asks for a launcher again. Policies applied while owner (status bar, keyguard, restrictions, stay-awake) are lifted when the owner is removed.
+
+A release build is not `testOnly`, so `remove-active-admin` refuses it: the only way out is a factory reset. The app sets `DISALLOW_FACTORY_RESET`, which blocks the Settings route; the recovery-menu route is unverified. Use the debug build while iterating.
+
+## Release and updates (Obtainium)
+
+Releases are signed APKs on GitHub Releases, installed and updated by Obtainium.
+
+```
+export SHAMASH_KEYSTORE_FILE=/path/to/release.jks SHAMASH_KEYSTORE_PASSWORD=... \
+       SHAMASH_KEY_ALIAS=... SHAMASH_KEY_PASSWORD=... \
+       SHAMASH_VERSION_NAME=0.2.0 SHAMASH_VERSION_CODE=2
+tools/release.sh             # builds, prints the `gh release create` command
+tools/release.sh --publish   # also runs it
+```
+
+The script refuses to run when `jj diff` shows uncommitted changes. `SHAMASH_VERSION_CODE` must increase with every release.
+
+- The APK must be signed with the same keystore every time, or Android rejects the update. Keep the keystore backed up; it is git-ignored and must stay so. This repo does not create one.
+- The first install on the kiosk phone is manual: `adb install -r <signed apk>` (release is not `testOnly`, so no `-t`). A phone that has the debug build must be uninstalled first (different signature).
+- In Obtainium add the GitHub repository URL as an app source; it tracks GitHub Releases and installs the APK.
+- A release build cannot have device owner removed over adb; iterate with debug.
+
+## Device test checklist
+
+Maps to brief section 7 "Done means".
+
+- [ ] 1. After `adb reboot` the phone shows the Idle button with no user action.
+- [ ] 2. Tap: start tone, red pulsing screen, Hebrew words appear while speaking.
+- [ ] 3. Tap again: stop tone, amber, then the final Hebrew transcript, then Idle.
+- [ ] 4. Each session leaves a playable WAV and a complete JSON; `adb pull` retrieves them.
+- [ ] 5. Wi-Fi off, tap: grey Error within the connect timeout, nothing recorded. Wi-Fi on, tap: Idle; tap again: works.
+- [ ] 6. No swipe, button or gesture leaves kiosk mode; the `dpm remove-active-admin` command does (debug build).
+- [ ] 7. The API key appears nowhere in the repository history.
+- [ ] 8. This README covers build, provisioning, pulling recordings and removing device owner, and the steps work on a freshly reset phone.
+
+Also check:
+
+- [ ] Start and stop tones play from the bottom speaker, and no tone leaks into the WAV.
+- [ ] Haptic feedback present or absent (note which).
+- [ ] Hebrew text is legible; mixed Hebrew/English renders in the right order.
+- [ ] Screen never turns off while charging; volume keys still work.
+- [ ] Timings: `adb logcat -s Shamash`.
+- [ ] Logcat shows each `kiosk:` step succeeded, including the RECORD_AUDIO grant.
+
+### Open questions for the owner
+
+- Tap-to-toggle or press-and-hold?
+- Text size on the real device.
+- How long the final transcript stays on screen before returning to idle.
+- Maximum listening duration (default 120 s).
