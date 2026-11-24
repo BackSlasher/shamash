@@ -112,34 +112,39 @@ sealed interface ServerMessage {
 
 /**
  * Cumulative realtime text. Each partial is the full text of the current segment (replace, never
- * append); committed segments are concatenated with a space in front of the running partial.
- * Not thread-safe; callers synchronise.
+ * append). Shown text is always `committed segments + segments awaiting commit + current partial`,
+ * space-joined, so it never goes backwards: when the client sends a commit ([onCommitSent]) the
+ * current partial moves to a pending queue and stays visible until its `committed_transcript`
+ * arrives, even if the next segment's partial comes first. Not thread-safe; callers synchronise.
  */
 class SegmentAccumulator {
-    private val committed = StringBuilder()
+    private val committed = ArrayList<String>()
+    private val pending = ArrayDeque<String>()
     private var partial = ""
 
     /** Text of everything committed so far. */
-    val committedText: String get() = committed.toString()
+    val committedText: String get() = join(committed)
 
-    /** Committed segments plus the current partial. */
+    private fun shown(): String = join(committed + pending + partial)
+
     fun onPartial(text: String): String {
-        partial = text
-        return join(committed.toString(), text)
+        partial = text.trim()
+        return shown()
+    }
+
+    /** The client sent a mid-stream commit; later partials belong to the next segment. Not used for the final commit. */
+    fun onCommitSent() {
+        pending.addLast(partial)
+        partial = ""
     }
 
     /** Returns the running text including this committed segment. */
     fun onCommitted(text: String): String {
-        val joined = join(committed.toString(), text.trim())
-        committed.clear()
-        committed.append(joined)
-        partial = ""
-        return joined
+        // Oldest requested commit first; an unrequested (server-side) commit consumes the current partial.
+        if (pending.isNotEmpty()) pending.removeFirst() else partial = ""
+        committed.add(text.trim())
+        return shown()
     }
 
-    private fun join(a: String, b: String): String = when {
-        a.isEmpty() -> b
-        b.isEmpty() -> a
-        else -> "$a $b"
-    }
+    private fun join(parts: List<String>): String = parts.filter { it.isNotEmpty() }.joinToString(" ")
 }

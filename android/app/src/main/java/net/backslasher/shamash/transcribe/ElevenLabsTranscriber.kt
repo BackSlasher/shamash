@@ -166,6 +166,7 @@ class ElevenLabsTranscriber(
                     if (it) {
                         msSinceCommit = 0
                         commitsSent++
+                        acc.onCommitSent()
                     }
                 }
             }
@@ -183,7 +184,7 @@ class ElevenLabsTranscriber(
         override suspend fun finish(): String {
             synchronized(lock) { failure }?.let { throw it }
             synchronized(lock) {
-                commitsSent++
+                commitsSent++ // final commit: no next segment, so late partials still belong to the current one
                 finishRequested = true
             }
             val tCommit = System.nanoTime()

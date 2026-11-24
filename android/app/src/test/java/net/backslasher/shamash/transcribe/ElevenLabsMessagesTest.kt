@@ -81,4 +81,30 @@ class ElevenLabsMessagesTest {
         assertEquals("x", a.onCommitted("x"))
         assertEquals("x", a.onCommitted(""))
     }
+
+    @Test
+    fun textNeverDropsWhenNextPartialArrivesBeforeCommit() {
+        val a = SegmentAccumulator()
+        a.onPartial("one two")
+        a.onCommitSent()
+        // Next segment's partial arrives before committed_transcript for segment 1.
+        assertEquals("one two three", a.onPartial("three"))
+        assertEquals("one two. three", a.onCommitted("one two."))
+        assertEquals("one two. three four", a.onPartial("three four"))
+        a.onCommitSent()
+        assertEquals("one two. three four", a.onCommitted("three four"))
+        assertEquals("one two. three four", a.committedText)
+    }
+
+    @Test
+    fun twoPendingCommitsResolveInOrder() {
+        val a = SegmentAccumulator()
+        a.onPartial("a")
+        a.onCommitSent()
+        a.onPartial("b")
+        a.onCommitSent()
+        assertEquals("a b c", a.onPartial("c"))
+        assertEquals("A b c", a.onCommitted("A"))
+        assertEquals("A B c", a.onCommitted("B"))
+    }
 }
