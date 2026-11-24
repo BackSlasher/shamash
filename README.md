@@ -84,4 +84,48 @@ Sources: `developer.android.com/work/dpc/dedicated-devices/{lock-task-mode,cookb
 
 ## Build
 
-TODO (filled in as the app is built).
+Prerequisite: `podman` only. Nothing else is installed on the host (JDK, Android SDK and Gradle live in the build image).
+
+```
+./build.sh                  # runs testDebugUnitTest + assembleDebug
+./build.sh assembleRelease  # any arguments are passed to Gradle
+```
+
+The first run builds the image `localhost/shamash-android-build:<hash>` (a few minutes); Gradle caches live in the podman volume `shamash-gradle-cache`.
+
+Output: `android/app/build/outputs/apk/debug/app-debug.apk`.
+
+### API key
+
+The build fails with a clear message unless the ElevenLabs key is provided, either as
+
+- `ELEVENLABS_KEY=...` in `<repo>/.env` (`build.sh` sources it and passes it into the container), or
+- `elevenlabs.key=...` in `android/local.properties`.
+
+Both files are git-ignored. The key is compiled into `BuildConfig.ELEVENLABS_KEY`; never print or commit it.
+
+### Install on the phone (manual, not part of the build)
+
+The debug APK is `testOnly` (so device owner can be removed over adb later), so it needs `-t`:
+
+```
+adb install -t -r android/app/build/outputs/apk/debug/app-debug.apk
+```
+
+### Pulling recordings
+
+Each session writes `<yyyyMMdd-HHmmss>.wav` (16 kHz mono 16-bit PCM) and a `.json` sidecar into `getExternalFilesDir(null)/recordings`, i.e.
+
+```
+adb pull /sdcard/Android/data/net.backslasher.shamash/files/recordings ./recordings
+```
+
+(`/sdcard` is the same as `/storage/emulated/0`.) Nothing is ever deleted automatically.
+
+### Current status
+
+Stages 1-2: the transcriber is a `FakeTranscriber` (fake Hebrew partials and final, no network). The real ElevenLabs transcriber replaces it in `ShamashViewModel`.
+
+## Provisioning and kiosk
+
+TODO (launcher, device owner, lock task, removal command: later task).
