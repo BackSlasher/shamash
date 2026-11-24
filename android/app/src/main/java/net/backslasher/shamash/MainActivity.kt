@@ -5,6 +5,7 @@ import android.content.pm.PackageManager
 import android.os.Bundle
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
@@ -48,6 +49,7 @@ class MainActivity : ComponentActivity() {
 
         val controller = viewModel.controller
         setContent {
+            BackHandler { } // absorb the back gesture
             val model by controller.model.collectAsStateWithLifecycle()
             val shown = if (micGranted) {
                 model

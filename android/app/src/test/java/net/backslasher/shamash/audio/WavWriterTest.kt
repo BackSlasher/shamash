@@ -48,4 +48,22 @@ class WavWriterTest {
         assertEquals(36, b.getInt(4))
         assertEquals(0, b.getInt(40))
     }
+
+    @Test
+    fun headerIsRepatchedPeriodicallyBeforeClose() {
+        val file = File(tmp.root, "p.wav")
+        val second = ByteArray(32_000)
+        val w = WavWriter(file, 16_000, 1)
+        w.write(second)
+        assertEquals(0, dataSizeOnDisk(file)) // 1 s: not yet patched
+        w.write(second) // 2 s: patched
+        assertEquals(64_000, dataSizeOnDisk(file))
+        w.write(second)
+        assertEquals(64_000, dataSizeOnDisk(file))
+        w.close()
+        assertEquals(96_000, dataSizeOnDisk(file))
+        assertEquals(44L + 96_000, file.length())
+    }
+
+    private fun dataSizeOnDisk(f: File) = ByteBuffer.wrap(f.readBytes()).order(ByteOrder.LITTLE_ENDIAN).getInt(40)
 }

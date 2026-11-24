@@ -22,7 +22,7 @@ import org.junit.Test
 
 class ElevenLabsTranscriberTest {
     private lateinit var server: MockWebServer
-    private val config = ShamashConfig(connectTimeoutMs = 3_000, finalTimeoutMs = 3_000, appVersion = "test")
+    private val config = ShamashConfig(connectTimeoutMs = 3_000, realtimeFinishTimeoutMs = 3_000, appVersion = "test")
 
     @Before fun setUp() {
         server = MockWebServer().also { it.start() }
@@ -167,10 +167,10 @@ class ElevenLabsTranscriberTest {
                 ws.send("""{"message_type":"committed_transcript","text":"$text"}""")
             }
         }
-        // 3200 bytes = 100 ms; commit after 200 ms of audio
-        val session = transcriber(commitEveryMs = 200).openStream()
-        session.sendAudio(ByteArray(3200))
-        session.sendAudio(ByteArray(3200)) // this one carries commit:true
+        // 3200 bytes = 100 ms; commit after 500 ms of audio, then 400 ms more before finish
+        val session = transcriber(commitEveryMs = 500).openStream()
+        session.sendAudio(ByteArray(16000)) // carries commit:true
+        session.sendAudio(ByteArray(12800))
         assertEquals("first part second part", session.finish())
         session.close()
     }
@@ -252,5 +252,48 @@ class ElevenLabsTranscriberTest {
         val session = transcriber().openStream()
         assertEquals("", session.finish())
         session.close()
+    }
+
+    @Test fun finishSkipsCommitWhenLittleAudioSincePeriodicCommit() = runBlocking {
+        val received = scriptWs { ws, m ->
+            if (isCommit(m)) ws.send("""{"message_type":"committed_transcript","text":"already committed"}""")
+        }
+        val session = transcriber(commitEveryMs = 500).openStream()
+        session.sendAudio(ByteArray(16000)) // periodic commit
+        session.sendAudio(ByteArray(3200)) // only 100 ms since
+        assertEquals("already committed", session.finish())
+        session.close()
+        synchronized(received) { assertEquals(1, received.count { isCommit(it) }) }
+    }
+
+    @Test fun throttledCommitDuringFinishResolvesWithCommittedText() = runBlocking {
+        var commits = 0
+        scriptWs { ws, m ->
+            if (isCommit(m)) {
+                commits++
+                if (commits == 1) ws.send("""{"message_type":"committed_transcript","text":"part one"}""")
+                else ws.send("""{"message_type":"commit_throttled","error":"too fast"}""")
+            }
+        }
+        val session = transcriber(commitEveryMs = 500).openStream()
+        session.sendAudio(ByteArray(16000)) // periodic commit
+        session.sendAudio(ByteArray(12800)) // 400 ms: final commit is sent
+        assertEquals("part one", session.finish())
+        session.close()
+    }
+
+    @Test fun insufficientAudioActivityDuringFinishResolvesEmpty() = runBlocking {
+        scriptWs { ws, m ->
+            if (isCommit(m)) ws.send("""{"message_type":"insufficient_audio_activity","error":"silence"}""")
+        }
+        val session = transcriber().openStream()
+        session.sendAudio(ByteArray(3200))
+        assertEquals("", session.finish())
+        session.close()
+    }
+
+    @Test fun batchNullTextIsEmptyString() = runBlocking {
+        server.enqueue(MockResponse.Builder().code(200).body("""{"text":null}""").build())
+        assertEquals("", transcriber().transcribeBatch(wavFile()).text)
     }
 }

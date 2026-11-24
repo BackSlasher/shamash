@@ -13,6 +13,7 @@ import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.withTimeout
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import net.backslasher.shamash.config.ShamashConfig
@@ -29,6 +30,12 @@ import okhttp3.WebSocket
 import okhttp3.WebSocketListener
 
 private const val TAG = "Shamash"
+
+/** Final commit is skipped when less new audio than this followed the last periodic commit. */
+private const val MIN_FINAL_COMMIT_AUDIO_MS = 300L
+
+/** During finish() these mean "nothing to commit": resolve with the text so far instead of failing. */
+private val NON_FATAL_ON_FINISH = setOf("commit_throttled", "insufficient_audio_activity")
 
 /**
  * ElevenLabs Scribe: realtime WebSocket for live partials, batch REST for the final text.
@@ -124,6 +131,12 @@ class ElevenLabsTranscriber(
                     }
                     is ServerMessage.Error -> {
                         Log.w(TAG, "realtime: server error ${msg.type}: ${msg.message}")
+                        val nonFatal = msg.type in NON_FATAL_ON_FINISH && synchronized(lock) { finishRequested }
+                        if (nonFatal) {
+                            // Nothing (more) to commit: resolve with what was already committed.
+                            done.complete(synchronized(lock) { acc.committedText })
+                            return
+                        }
                         fail(ElevenLabsApiException(msg.type, "${msg.type}: ${msg.message}"))
                         webSocket.cancel()
                     }
@@ -183,18 +196,25 @@ class ElevenLabsTranscriber(
 
         override suspend fun finish(): String {
             synchronized(lock) { failure }?.let { throw it }
-            synchronized(lock) {
-                commitsSent++ // final commit: no next segment, so late partials still belong to the current one
+            // Little new audio since a periodic commit: another commit would only be throttled or rejected.
+            val sendCommit = synchronized(lock) {
+                val skip = commitsSent > 0 && msSinceCommit < MIN_FINAL_COMMIT_AUDIO_MS
+                if (!skip) commitsSent++ // final commit: no next segment, so late partials still belong to the current one
                 finishRequested = true
+                !skip
             }
             val tCommit = System.nanoTime()
-            send(ElevenLabsJson.audioChunk(ByteArray(0), commit = true, sampleRate = config.sampleRate))
-            Log.d(TAG, "realtime: -> final commit")
+            if (sendCommit) {
+                send(ElevenLabsJson.audioChunk(ByteArray(0), commit = true, sampleRate = config.sampleRate))
+                Log.d(TAG, "realtime: -> final commit")
+            } else {
+                Log.d(TAG, "realtime: final commit skipped (under $MIN_FINAL_COMMIT_AUDIO_MS ms since last commit)")
+            }
             checkDone()
             val text = try {
-                withTimeout(config.finalTimeoutMs) { done.await() }
+                withTimeout(config.realtimeFinishTimeoutMs) { done.await() }
             } catch (e: TimeoutCancellationException) {
-                throw ElevenLabsNetworkException("Timed out waiting for committed_transcript (${config.finalTimeoutMs} ms)")
+                throw ElevenLabsNetworkException("Timed out waiting for committed_transcript (${config.realtimeFinishTimeoutMs} ms)")
             }
             Log.d(TAG, "realtime: committed ${ms(tCommit)} ms after final commit")
             close(graceful = true)
@@ -230,8 +250,8 @@ class ElevenLabsTranscriber(
             .build()
         val batchClient = client.newBuilder()
             .connectTimeout(10, TimeUnit.SECONDS)
-            .readTimeout(60, TimeUnit.SECONDS)
-            .writeTimeout(60, TimeUnit.SECONDS)
+            .readTimeout(config.batchTimeoutMs, TimeUnit.MILLISECONDS) // at least as long as the caller's budget
+            .writeTimeout(config.batchTimeoutMs, TimeUnit.MILLISECONDS)
             .build()
         val t0 = System.nanoTime()
         val (code, text) = batchClient.newCall(request).await()
@@ -240,11 +260,12 @@ class ElevenLabsTranscriber(
             throw ElevenLabsApiException("http_$code", "HTTP $code: ${ElevenLabsJson.errorDetail(text)}", code)
         }
         val parsed = try {
-            (ElevenLabsJson.json.parseToJsonElement(text) as JsonObject)["text"] as JsonPrimitive
+            val el = (ElevenLabsJson.json.parseToJsonElement(text) as JsonObject)["text"] as JsonPrimitive
+            if (el is JsonNull) "" else el.content
         } catch (e: Exception) {
             throw ElevenLabsApiException("bad_response", "Unexpected batch response: ${text.take(200)}", code)
         }
-        return BatchResult(parsed.content, text)
+        return BatchResult(parsed, text)
     }
 
     private fun ms(t0: Long) = (System.nanoTime() - t0) / 1_000_000

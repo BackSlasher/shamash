@@ -9,6 +9,7 @@ import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import net.backslasher.shamash.BuildConfig
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.waitForUpOrCancellation
@@ -115,7 +116,8 @@ private fun ErrorContent(model: ScreenModel) {
     }
     Column(Modifier.padding(horizontal = 32.dp), horizontalAlignment = Alignment.End) {
         BasicText(hebrew, style = textStyle(64))
-        model.errorMessage?.let {
+        // Technical English detail for debugging only; the user never sees it in release builds.
+        model.errorMessage?.takeIf { BuildConfig.DEBUG }?.let {
             BasicText(
                 it,
                 modifier = Modifier.padding(top = 24.dp),
@@ -129,7 +131,7 @@ private fun textStyle(size: Int) = TextStyle(
     color = Color.White,
     fontSize = size.sp,
     lineHeight = (size * 1.2f).sp,
-    textDirection = TextDirection.Content,
+    textDirection = TextDirection.ContentOrRtl,
     textAlign = TextAlign.Right,
     shadow = Shadow(Color(0xCC000000), Offset(0f, 3f), 10f),
 )

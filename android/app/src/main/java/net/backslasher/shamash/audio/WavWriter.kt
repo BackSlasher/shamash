@@ -14,6 +14,8 @@ class WavWriter(
 ) : Closeable {
     private val raf = RandomAccessFile(file, "rw")
     private var dataBytes = 0L
+    private var bytesSincePatch = 0L
+    private val patchEveryBytes = sampleRate.toLong() * channels * 2 * PATCH_EVERY_SECONDS
     private var closed = false
 
     init {
@@ -26,6 +28,18 @@ class WavWriter(
         check(!closed) { "WavWriter closed" }
         raf.write(pcm, offset, length)
         dataBytes += length
+        bytesSincePatch += length
+        if (bytesSincePatch >= patchEveryBytes) {
+            // Keep the header valid so a killed process still leaves a playable file.
+            writeHeader()
+            bytesSincePatch = 0
+        }
+    }
+
+    private fun writeHeader() {
+        raf.seek(0)
+        raf.write(header(dataBytes.coerceAtMost(0xFFFF_FFFFL - 36), sampleRate, channels))
+        raf.seek(HEADER_SIZE + dataBytes)
     }
 
     @Synchronized
@@ -33,8 +47,7 @@ class WavWriter(
         if (closed) return
         closed = true
         try {
-            raf.seek(0)
-            raf.write(header(dataBytes.coerceAtMost(0xFFFF_FFFFL - 36), sampleRate, channels))
+            writeHeader()
         } finally {
             raf.close()
         }
@@ -42,6 +55,7 @@ class WavWriter(
 
     companion object {
         const val HEADER_SIZE = 44
+        const val PATCH_EVERY_SECONDS = 2
 
         fun header(dataSize: Long, sampleRate: Int, channels: Int, bitsPerSample: Int = 16): ByteArray {
             val byteRate = sampleRate * channels * bitsPerSample / 8

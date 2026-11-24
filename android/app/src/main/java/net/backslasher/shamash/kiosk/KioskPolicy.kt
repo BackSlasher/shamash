@@ -55,8 +55,8 @@ object KioskPolicy {
             dpm.setGlobalSetting(admin, Settings.Global.STAY_ON_WHILE_PLUGGED_IN, plugged.toString())
         }
         step("adb enabled") { dpm.setGlobalSetting(admin, Settings.Global.ADB_ENABLED, "1") }
-        step("keyguard disabled") { dpm.setKeyguardDisabled(admin, true) }
-        step("status bar disabled") { dpm.setStatusBarDisabled(admin, true) }
+        step("keyguard disabled") { Log.i(TAG, "kiosk: setKeyguardDisabled returned ${dpm.setKeyguardDisabled(admin, true)}") }
+        step("status bar disabled") { Log.i(TAG, "kiosk: setStatusBarDisabled returned ${dpm.setStatusBarDisabled(admin, true)}") }
         for (r in listOf(
             UserManager.DISALLOW_FACTORY_RESET,
             UserManager.DISALLOW_SAFE_BOOT,
@@ -85,6 +85,12 @@ object KioskPolicy {
     /** Starts lock task mode when device owner and not already locked. Never called for ordinary installs. */
     fun enterLockTaskIfPossible(activity: Activity) {
         if (!isDeviceOwner(activity) || isInLockTask(activity)) return
+        // A non-allowlisted startLockTask() would show the screen-pinning dialog, so require the allowlist.
+        val permitted = dpm(activity)?.isLockTaskPermitted(activity.packageName) == true
+        if (!permitted) {
+            Log.w(TAG, "kiosk: package not lock-task permitted, skipping startLockTask")
+            return
+        }
         step("startLockTask") { activity.startLockTask() }
     }
 

@@ -9,6 +9,7 @@ import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
 import android.util.Log
 import java.io.File
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import net.backslasher.shamash.BuildConfig
@@ -30,7 +31,10 @@ data class DeviceInfoRecord(
 
 /** One-off probe on first launch; result goes to `<recordings>/device-info.json`. Nothing depends on it. */
 object DeviceInfo {
+    private val started = AtomicBoolean(false)
+
     fun probeOnce(context: Context, recordingsDir: File) {
+        if (!started.compareAndSet(false, true)) return // async probe may still be running
         val out = File(recordingsDir, "device-info.json")
         if (out.exists()) return
         try {
@@ -55,16 +59,22 @@ object DeviceInfo {
                 intent, context.mainExecutor,
                 object : RecognitionSupportCallback {
                     override fun onSupportResult(s: RecognitionSupport) {
-                        write(
-                            "installed=${s.installedOnDeviceLanguages} pending=${s.pendingOnDeviceLanguages} " +
-                                "supported=${s.supportedOnDeviceLanguages}",
-                        )
-                        recognizer.destroy()
+                        try {
+                            write(
+                                "installed=${s.installedOnDeviceLanguages} pending=${s.pendingOnDeviceLanguages} " +
+                                    "supported=${s.supportedOnDeviceLanguages}",
+                            )
+                        } finally {
+                            recognizer.destroy()
+                        }
                     }
 
                     override fun onError(error: Int) {
-                        write("error_$error")
-                        recognizer.destroy()
+                        try {
+                            write("error_$error")
+                        } finally {
+                            recognizer.destroy()
+                        }
                     }
                 },
             )
