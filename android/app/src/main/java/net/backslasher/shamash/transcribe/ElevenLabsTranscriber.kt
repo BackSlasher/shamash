@@ -241,6 +241,10 @@ class ElevenLabsTranscriber(
         val body = MultipartBody.Builder().setType(MultipartBody.FORM)
             .addFormDataPart("model_id", config.batchModelId)
             .addFormDataPart("language_code", config.languageCode)
+            // The start tone is in the first ~150 ms of every WAV; without this Scribe
+            // labels it "[צליל של הודעה]" and that tag becomes the whole transcript of a
+            // silent session.
+            .addFormDataPart("tag_audio_events", "false")
             .addFormDataPart("file", wav.name, wav.asRequestBody("audio/wav".toMediaType()))
             .build()
         val request = Request.Builder()
