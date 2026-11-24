@@ -123,7 +123,7 @@ Unit tests never touch the network. One opt-in live test streams `tools/fixtures
 
 `tools/rt_smoke.py` is a Python realtime smoke test (needs the `websockets` package): `set -a; . .env; set +a; python3 tools/rt_smoke.py tools/fixtures/hebrew_v3.wav`. See `tools/fixtures/README.md`.
 
-Set `ShamashConfig.useFakeTranscriber = true` for UI work without network. Logs use tag `Shamash`.
+Build with `-PfakeTranscriber=true` for UI or microphone work without network. Logs use tag `Shamash`.
 
 ## Install for development (ordinary app)
 
@@ -140,7 +140,7 @@ Without device owner the app is an ordinary app: it hides the system bars (immer
 1. Factory reset the phone.
 2. In the setup wizard connect to Wi-Fi (the app needs it) but do **not** add a Google account; skip everything else.
 3. Settings > About phone: tap Build number 7 times. Then Developer options > enable USB debugging.
-4. Connect USB, run `adb devices`, accept the RSA (Rivest-Shamir-Adleman) key prompt on the phone; the device must show as `device`, not `unauthorized`.
+4. Connect USB, run `adb devices`, accept the RSA (Rivest-Shamir-Adleman) key prompt on the phone **and tick "Always allow from this computer"**; the device must show as `device`, not `unauthorized`. Then `adb reboot` once and confirm it still shows as `device`. A one-time approval is forgotten on reboot, and once the phone is in lock task mode the approval dialog may not be reachable, which locks you out of adb (this happened on 2026-11-25).
 5. `adb install -t -r android/app/build/outputs/apk/debug/app-debug.apk`
 6. `adb shell dpm set-device-owner net.backslasher.shamash/.kiosk.ShamashAdminReceiver`
    Expected output:
@@ -149,7 +149,7 @@ Without device owner the app is an ordinary app: it hides the system bars (immer
    Active admin set to component {net.backslasher.shamash/net.backslasher.shamash.kiosk.ShamashAdminReceiver}
    ```
    If it fails with `Not allowed to set the device owner because there are already some accounts on the device`, remove the account (Settings > Passwords & accounts) or factory reset again and skip account setup.
-7. `adb shell am start -n net.backslasher.shamash/.MainActivity` (or press Home and choose Shamash "Always"). On launch the app applies its policies and enters lock task mode; the microphone is pre-granted, so no dialog.
+7. The policies are applied in the app's `onCreate`, so the app process must start fresh after step 6. `am force-stop` and `am crash` do not stop a device-owner process; either reinstall (`adb install -t -r ...`, which kills it) or `adb reboot`, then `adb shell am start -n net.backslasher.shamash/.MainActivity`. Expected in `adb logcat -s Shamash`: `setKeyguardDisabled returned true`, `setStatusBarDisabled returned true`, `RECORD_AUDIO grant applied`, `lock task mode entering`. `adb shell dumpsys activity activities | grep mLockTaskModeState` must say `LOCKED` (`PINNED` means screen pinning, i.e. the allowlist was not applied yet).
 8. `adb reboot` and confirm the phone comes up directly in the app.
 
 `adb shell dpm` prints its own help; it documents that `remove-active-admin` only works for `testOnly` apps. `adb shell dpm` is the authority if this README drifts.
@@ -214,27 +214,37 @@ The script refuses to run when `jj diff` shows uncommitted changes. `SHAMASH_VER
 
 Maps to brief section 7 "Done means".
 
-- [ ] 1. After `adb reboot` the phone shows the Idle button with no user action.
-- [ ] 2. Tap: start tone, red pulsing screen, Hebrew words appear while speaking.
-- [ ] 3. Tap again: stop tone, amber, then the final Hebrew transcript, then Idle.
-- [ ] 4. Each session leaves a playable WAV and a complete JSON; `adb pull` retrieves them.
-- [ ] 5. Wi-Fi off, tap: grey Error within the connect timeout, nothing recorded. Wi-Fi on, tap: Idle; tap again: works.
-- [ ] 6. No swipe, button or gesture leaves kiosk mode; the `dpm remove-active-admin` command does (debug build).
-- [ ] 7. The API key appears nowhere in the repository history.
-- [ ] 8. This README covers build, provisioning, pulling recordings and removing device owner, and the steps work on a freshly reset phone.
+Status as of 2026-11-25 01:00, Pixel 7 Pro, Android 16 (API 36), debug build, device owner set, phone on the guest Wi-Fi:
 
-Also check:
+- [ ] 1. After `adb reboot` the phone shows the Idle button with no user action. *Rebooted; could not verify because adb came back `unauthorized` (see provisioning step 4).*
+- [x] 2. Tap: red pulsing screen; realtime session ready 330 ms after the tap. *Spoken Hebrew not yet tested on the device; only ambient sound.*
+- [x] 3. Tap again: amber, then the final transcript, then Idle. Final text 1.2 s after the stop tap for a 7 s clip.
+- [x] 4. WAV (16 kHz mono 16-bit, correct duration) and JSON per session; `adb pull` works.
+- [x] 5. No network, tap: grey Error ("אין חיבור") within 13 ms, nothing recorded.
+- [x] 6. Home, Back, Recents, swipe from top, swipe from bottom: focus stays in the app, lock task state `LOCKED`. *`remove-active-admin` not yet exercised.*
+- [x] 7. `.env` and `local.properties` are untracked; the key is only in `BuildConfig`.
+- [ ] 8. Provisioning steps worked up to the reboot; README updated with what was learned.
 
-- [ ] Start and stop tones play from the bottom speaker, and no tone leaks into the WAV.
+Also seen:
+
+- The power button still turns the screen off (`Dozing`); it wakes straight back into the app, with no lock screen. A dock that covers the button, or a wake lock on screen-off, would avoid it.
+- A 120 s session on the first build timed out in the final step ("Timed out waiting for the final transcript (20000 ms)"); the batch timeout is now 90 s and the long-session case needs a re-test.
+- A swipe anywhere counts as a tap, which is fine on a stand.
+- The on-device recogniser does not offer Hebrew (`he-IL: supported=[]`), as the brief expected.
+- The start tone is captured in the first ~150 ms of the WAV. Batch now sends `tag_audio_events=false` so it is not labelled; whether it harms recognition of the first word needs a listening test.
+
+Still to check with a person present:
+
+- [ ] Spoken Hebrew: live partials appear while speaking, final transcript correct.
+- [ ] Start and stop tones play from the bottom speaker, at a usable volume.
 - [ ] Haptic feedback present or absent (note which).
-- [ ] Hebrew text is legible; mixed Hebrew/English renders in the right order.
-- [ ] Screen never turns off while charging; volume keys still work.
-- [ ] Timings: `adb logcat -s Shamash`.
-- [ ] Logcat shows each `kiosk:` step succeeded, including the RECORD_AUDIO grant.
+- [ ] Hebrew text size and legibility from the stand; mixed Hebrew/English order.
+- [ ] A session longer than 25 s (periodic commit) and the full 120 s auto-stop, on the current build.
+- [ ] `adb shell dpm remove-active-admin ...` then re-provision.
 
 ### Open questions for the owner
 
 - Tap-to-toggle or press-and-hold?
 - Text size on the real device.
-- How long the final transcript stays on screen before returning to idle.
 - Maximum listening duration (default 120 s).
+- Power button: accept that it blanks the screen until the next press, cover it with the dock, or have the app re-wake the screen?
