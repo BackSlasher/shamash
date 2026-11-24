@@ -11,7 +11,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.TimeoutCancellationException
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -48,8 +47,6 @@ class SessionController(
     private val cues: Cues,
     private val clock: Clock = SystemClock,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
-    /** Minimum time between the start cue and opening the microphone, so the tone is not recorded. */
-    private val cueSettleMs: Long = 250L,
 ) {
     private val _model = MutableStateFlow(ScreenModel())
     val model: StateFlow<ScreenModel> = _model.asStateFlow()
@@ -112,9 +109,8 @@ class SessionController(
     // ---- the session ----
 
     private suspend fun runSession(signal: CompletableDeferred<Unit>) {
-        val tapAt = clock.elapsedMs()
-        cues.start()
-
+        // Amber (WORKING) while the stream opens; the start cue plays only once capture is running,
+        // so everything spoken after the beep is recorded.
         val session: StreamingSession = try {
             withTimeout(config.connectTimeoutMs) { transcriber.openStream() }
         } catch (e: TimeoutCancellationException) {
@@ -148,9 +144,6 @@ class SessionController(
         var cancelled = false
 
         try {
-            val wait = cueSettleMs - (clock.elapsedMs() - tapAt)
-            if (wait > 0) delay(wait)
-
             listeningWallMs = clock.wallMs()
             val f = withContext(ioDispatcher) { store.create(listeningWallMs) }
             files = f
@@ -158,7 +151,6 @@ class SessionController(
             wav = w
 
             listeningStartedAt = clock.elapsedMs()
-            setModel(ShamashState.LISTENING, "")
 
             partialJob = scope.launch(start = CoroutineStart.UNDISPATCHED) {
                 session.partials.collect { text ->
@@ -176,13 +168,25 @@ class SessionController(
             }
 
             // One collector fans each chunk out to the WAV writer and the streaming session.
+            // The first SKIP_STREAM_MS of PCM stay in the WAV but are not streamed: the start cue leaks in there.
+            var skipBytes = config.sampleRate * 2 * SKIP_STREAM_MS / 1000
             captureJob = scope.launch(ioDispatcher) {
                 try {
                     capture.start().collect { chunk ->
                         w.write(chunk)
-                        if (streamError.get() == null) {
+                        var out = chunk
+                        if (skipBytes > 0) {
+                            if (chunk.size <= skipBytes) {
+                                skipBytes -= chunk.size
+                                out = ByteArray(0)
+                            } else {
+                                out = chunk.copyOfRange(skipBytes, chunk.size)
+                                skipBytes = 0
+                            }
+                        }
+                        if (out.isNotEmpty() && streamError.get() == null) {
                             try {
-                                session.sendAudio(chunk)
+                                session.sendAudio(out)
                             } catch (e: CancellationException) {
                                 throw e
                             } catch (e: Exception) {
@@ -198,6 +202,10 @@ class SessionController(
                     signal.complete(Unit)
                 }
             }
+
+            // Capture first, then the cue, then the red screen.
+            cues.start()
+            setModel(ShamashState.LISTENING, "")
 
             withTimeoutOrNull(config.maxListeningMs) { signal.await() } // null means max duration reached: auto-stop
 
@@ -216,15 +224,14 @@ class SessionController(
                 errorType = failure.third
             } else {
                 try {
-                    withTimeout(config.finalTimeoutMs) {
-                        realtimeFinal = session.finish()
-                        val result = transcriber.transcribeBatch(f.wav)
-                        batchText = result.text
-                        batchRaw = result.raw
-                    }
+                    realtimeFinal = withTimeout(config.realtimeFinishTimeoutMs) { session.finish() }
+                    val result = withTimeout(config.batchTimeoutMs) { transcriber.transcribeBatch(f.wav) }
+                    batchText = result.text
+                    batchRaw = result.raw
                     stopToFinalMs = clock.elapsedMs() - stopAt
                 } catch (e: TimeoutCancellationException) {
-                    error = "Timed out waiting for the final transcript (${config.finalTimeoutMs} ms)"
+                    error = "Timed out waiting for the final transcript (${e.message})"
+                    errorKind = ErrorKind.NO_NETWORK
                     errorType = "timeout"
                 } catch (e: CancellationException) {
                     throw e
@@ -290,6 +297,10 @@ class SessionController(
         } else {
             fail(error ?: "Unknown error", errorKind)
         }
+    }
+
+    private companion object {
+        const val SKIP_STREAM_MS = 200
     }
 
     private fun describe(e: Throwable): String = e.message?.takeIf { it.isNotBlank() } ?: e::class.java.simpleName

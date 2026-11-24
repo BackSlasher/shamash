@@ -90,9 +90,14 @@ class SessionControllerTest {
         assertEquals(ShamashState.IDLE, e.state)
         e.controller.onTap()
         assertEquals(ShamashState.WORKING, e.state)
+        advanceTimeBy(100); runCurrent() // stream still opening: amber, no cue yet
+        assertEquals(ShamashState.WORKING, e.state)
+        assertTrue(e.cues.events.isEmpty())
+        assertEquals(0, e.capture.chunks)
         advanceTimeBy(1_000); runCurrent()
         assertEquals(ShamashState.LISTENING, e.state)
         assertEquals(listOf("start"), e.cues.events)
+        assertTrue(e.capture.chunks > 0)
         advanceTimeBy(2_500); runCurrent()
         assertEquals("שלום מה שלומך", e.controller.model.value.transcript)
         assertFalse(e.controller.model.value.isFinal)
@@ -126,8 +131,19 @@ class SessionControllerTest {
         assertEquals(ErrorKind.NO_NETWORK, e.controller.model.value.errorKind)
         assertNotNull(e.controller.model.value.errorMessage)
         assertEquals(0, e.capture.chunks)
+        assertTrue(e.cues.events.isEmpty()) // no cue when the stream cannot be opened
         assertTrue(e.files("wav").isEmpty())
         assertTrue(e.files("json").isEmpty())
+    }
+
+    @Test
+    fun finalStepTimeoutMapsToNoNetwork() = runTest {
+        val e = env(transcriber = FakeTranscriber(batchDelayMs = 200_000))
+        e.controller.onTap(); advanceTimeBy(2_000); runCurrent()
+        e.controller.onTap(); advanceTimeBy(100_000); runCurrent()
+        assertEquals(ShamashState.ERROR, e.state)
+        assertEquals(ErrorKind.NO_NETWORK, e.controller.model.value.errorKind)
+        assertEquals("timeout", e.record().errorType)
     }
 
     @Test
