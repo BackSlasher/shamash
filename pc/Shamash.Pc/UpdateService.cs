@@ -14,6 +14,8 @@ public sealed class UpdateService(ILogger<UpdateService> log) : BackgroundServic
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         var mgr = new UpdateManager(new GithubSource("https://github.com/BackSlasher/shamash", null, false));
+        log.LogInformation("Shamash.Pc {Version} starting, velopackInstalled={Installed}, currentVersion={Current}",
+            HeartbeatService.AppVersion, mgr.IsInstalled, mgr.IsInstalled ? mgr.CurrentVersion?.ToString() : "n/a");
         if (!mgr.IsInstalled)
         {
             log.LogInformation("not installed via Velopack, skipping updates");
@@ -22,6 +24,7 @@ public sealed class UpdateService(ILogger<UpdateService> log) : BackgroundServic
 
         var window = UpdateWindow.Parse(Environment.GetEnvironmentVariable("SHAMASH_UPDATE_WINDOW"));
         var now = Environment.GetEnvironmentVariable("SHAMASH_UPDATE_NOW") == "1";
+        log.LogInformation("Update window {Start}-{End} local time, applyImmediately={Now}", window.Start, window.End, now);
 
         while (!stoppingToken.IsCancellationRequested)
         {
@@ -34,8 +37,13 @@ public sealed class UpdateService(ILogger<UpdateService> log) : BackgroundServic
                     await mgr.DownloadUpdatesAsync(update, cancelToken: stoppingToken);
                     log.LogInformation("Update {Version} downloaded", update.TargetFullRelease.Version);
 
-                    while (!now && !window.Contains(TimeOnly.FromDateTime(DateTime.Now)))
-                        await Task.Delay(WindowPoll, stoppingToken);
+                    if (!now && !window.Contains(TimeOnly.FromDateTime(DateTime.Now)))
+                    {
+                        log.LogInformation("Outside the update window, holding update {Version} until {Start}",
+                            update.TargetFullRelease.Version, window.Start);
+                        while (!window.Contains(TimeOnly.FromDateTime(DateTime.Now)))
+                            await Task.Delay(WindowPoll, stoppingToken);
+                    }
 
                     log.LogInformation("Applying update {Version} and restarting", update.TargetFullRelease.Version);
                     mgr.ApplyUpdatesAndRestart(update);
