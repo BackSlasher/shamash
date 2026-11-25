@@ -17,7 +17,7 @@ Serilog (`Serilog.Extensions.Hosting`, `Serilog.Sinks.Console`, `Serilog.Sinks.F
 
 ## Commands
 
-All from the repo root; only podman is needed on the host.
+All from the repo root; only podman is needed on the host. The build image is `pc/Containerfile` (the official .NET 10 SDK image plus `zstd`, which vpk needs to build delta packages; without it `pack` fails with "Could not find 'zstd' binary" as soon as a previous release sits in `pc/out/releases`). Keep `pc/out/releases` between releases, or fetch the previous one with `pc/build.sh vpk "[win]" download github ...`, so deltas get built.
 
 ```
 pc/build.sh test       # dotnet test
@@ -54,6 +54,7 @@ The `vpk` version (`vpk_version` in `build.sh`) must equal the `Velopack` packag
 | `GITHUB_TOKEN` | upload | token for the release upload |
 | `SHAMASH_UPDATE_WINDOW` | runtime | `HH:mm-HH:mm` local time, default `03:00-05:00`; may cross midnight; malformed falls back to default |
 | `SHAMASH_UPDATE_NOW` | runtime | `1` applies a downloaded update immediately |
+| `SHAMASH_UPDATE_CHECK_MINUTES` | runtime | minutes between update checks, default 360, minimum 1 |
 
 ## Update flow
 
@@ -69,10 +70,18 @@ The `vpk` version (`vpk_version` in `build.sh`) must equal the `Velopack` packag
 - `pc/build.sh pack` works on Linux: vpk 1.2.161 logs "Directive enabled for cross-compiling from Linux (current os) to Windows" and produces `Shamash.Pc-win-Setup.exe`, `Shamash.Pc-0.1.0-full.nupkg`, `Shamash.Pc-win-Portable.zip`, `RELEASES`, `releases.win.json`, `assets.win.json`.
 - `pc/build.sh upload` with `--merge` attached `Shamash.Pc-win-Setup.exe`, `Shamash.Pc-0.1.0-full.nupkg`, `Shamash.Pc-win-Portable.zip`, `releases.win.json` and `RELEASES` to the existing release <https://github.com/BackSlasher/shamash/releases/tag/v0.1.0>, next to the phone APK.
 
+## Verified on Windows 11 (2026-11-25, in the test VM from `tools/winvm/`)
+
+- `Setup.exe --silent`, run from an SSH session as the normal user, exits 0 with no prompt and installs to `%LocalAppData%\Shamash.Pc` (`Shamash.Pc.exe` stub, `Update.exe`, `current\`, `packages\`).
+- Started by a logon scheduled task with no execution time limit, the 0.1.0 app logged its heartbeat and "No update available" against the real repo within 2 s.
+- With v0.1.1 published and the app restarted: "Update available: 0.1.1", "Update 0.1.1 downloaded" 4 s later (the full 37 MB package, not the 7.5 KB delta vpk had built). After a restart with `SHAMASH_UPDATE_NOW=1` the process came back as 0.1.1 from `current\`, `sq.version` 0.1.1.
+- With v0.1.2 published and the app restarted without the override at 15:03 local: downloaded, then "Outside the update window, holding update 0.1.2 until 03:00".
+- The log file is `%LocalAppData%\Shamash\logs\shamash-<yyyyMMdd>.log`.
+
 ## Not verified
 
-- Anything running on Windows: that the exe starts, that Setup.exe installs, shortcuts, per-user install location, uninstall.
-- The actual update cycle (check, download, apply, restart), the update window behaviour at runtime, and `IsInstalled` detection. The GitHub source reading `releases.win.json` from the real repo is untested until a second release exists.
+- Uninstall, shortcuts, and SmartScreen on a browser-downloaded Setup.exe (the VM copy came over the shared folder).
+- Why the delta package is not used: Velopack downloaded the full package both times.
 - Release assets are unsigned; Windows SmartScreen may warn on first run.
 - vpk warns that `VelopackApp.Run()` "does not look like your application's entry point" because of top-level async `Main`. It is the first statement; whether this matters on Windows is unverified.
 - Delta packages do not exist yet (first release); delta updates are untested.

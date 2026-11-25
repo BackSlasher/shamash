@@ -253,6 +253,7 @@ Published so far:
 | Tag | versionCode | APK | Notes |
 |---|---|---|---|
 | v0.1.0 (2026-11-25) | 1 | `shamash-0.1.0.apk`, 1.7 MB, R8-minified | First signed release. Built and signature-verified, not yet run on the phone. Also carries the PC scaffold (`Shamash.Pc-win-Setup.exe` and Velopack assets, see `pc/README.md`). |
+| v0.1.1, v0.1.2, v0.1.3 (2026-11-25) | 2, 3, 4 | same APK code | Cut to exercise the PC self-update in the Windows test VM (`pc/README.md`, "Verified on Windows 11"). No phone-side change. |
 
 One release carries both halves. Order matters: `tools/release.sh --publish` first (it uses `gh release create`, which refuses an existing tag), then `SHAMASH_VERSION_NAME=<same> pc/build.sh publish pack upload`, whose `vpk upload --merge` adds the Windows assets to that release.
 
