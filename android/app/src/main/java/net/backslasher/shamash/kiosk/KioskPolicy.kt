@@ -57,9 +57,11 @@ object KioskPolicy {
         step("adb enabled") { dpm.setGlobalSetting(admin, Settings.Global.ADB_ENABLED, "1") }
         step("keyguard disabled") { Log.i(TAG, "kiosk: setKeyguardDisabled returned ${dpm.setKeyguardDisabled(admin, true)}") }
         step("status bar disabled") { Log.i(TAG, "kiosk: setStatusBarDisabled returned ${dpm.setStatusBarDisabled(admin, true)}") }
+        // DISALLOW_SAFE_BOOT is deliberately not set: safe boot is the recovery path for the POC
+        // (owner is present; in safe mode third-party apps including the device owner do not run,
+        // so Settings and the adb "Allow USB debugging?" dialog are reachable).
         for (r in listOf(
             UserManager.DISALLOW_FACTORY_RESET,
-            UserManager.DISALLOW_SAFE_BOOT,
             UserManager.DISALLOW_ADD_USER,
             UserManager.DISALLOW_SYSTEM_ERROR_DIALOGS,
         )) {

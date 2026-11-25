@@ -75,7 +75,7 @@ Sources: `developer.android.com/work/dpc/dedicated-devices/{lock-task-mode,cookb
 - **Screen never off:** `setGlobalSetting(admin, STAY_ON_WHILE_PLUGGED_IN, (BATTERY_PLUGGED_AC or USB or WIRELESS).toString())` is still permitted for device owners, but only if `setMaximumTimeToLock` is not used. Plus `FLAG_KEEP_SCREEN_ON` on the window. `setMaximumTimeToLock(admin, 0)` means "no restriction", not "never lock", so we do not use it.
 - **ADB stays on:** `setGlobalSetting(admin, ADB_ENABLED, "1")` is still permitted for device owners. Do not add `DISALLOW_DEBUGGING_FEATURES`.
 - **Microphone pre-grant:** `setPermissionGrantState(admin, pkg, RECORD_AUDIO, PERMISSION_GRANT_STATE_GRANTED)`. On Android 12+ sensor permissions (RECORD_AUDIO, CAMERA, location...) are restricted, but "a device owner, by default, may continue granting these permissions" unless provisioning opted out with `EXTRA_PROVISIONING_SENSORS_PERMISSION_GRANT_OPT_OUT`. adb provisioning does not opt out. With `targetSdk >= 35` a disallowed grant throws `SecurityException` instead of failing silently, so wrap it and check `canAdminGrantSensorsPermissions()` first.
-- **Useful user restrictions** for a kiosk: `DISALLOW_FACTORY_RESET`, `DISALLOW_SAFE_BOOT`, `DISALLOW_ADD_USER`, `DISALLOW_SYSTEM_ERROR_DIALOGS` (API 28+). Do not add `DISALLOW_ADJUST_VOLUME`; the hearing aids need it.
+- **Useful user restrictions** for a kiosk: `DISALLOW_FACTORY_RESET`, `DISALLOW_ADD_USER`, `DISALLOW_SYSTEM_ERROR_DIALOGS` (API 28+). Do not add `DISALLOW_ADJUST_VOLUME`; the hearing aids need it. `DISALLOW_SAFE_BOOT` is deliberately not set (see Escape hatches).
 - **Battery optimisation:** not a device-owner API. The app is always in the foreground, so it is moot; if needed, `adb shell dumpsys deviceidle whitelist +net.backslasher.shamash`.
 - **Android versions:** Android 16 is API 36. Pixel 7 gets five years of OS updates from October 2022, so it is current through 2027. `minSdk 33` per the brief, `compileSdk`/`targetSdk 37`.
 
@@ -154,6 +154,14 @@ Without device owner the app is an ordinary app: it hides the system bars (immer
 
 `adb shell dpm` prints its own help; it documents that `remove-active-admin` only works for `testOnly` apps. `adb shell dpm` is the authority if this README drifts.
 
+### Escape hatches
+
+Lock task blocks the "Allow USB debugging?" dialog and the app has no other way out, so there are three ways back in, in order of preference:
+
+1. **Maintenance unlock (three-finger hold).** Hold three or more fingers on the screen for 5 seconds. The phone buzzes, lock task stops and "maintenance mode - kiosk unlocked" shows at the bottom. Unplug and replug USB so the "Allow USB debugging" dialog appears, and tick "Always allow from this computer". The app stays unlocked until the process restarts (reinstall or reboot re-locks).
+2. **Safe mode.** Reboot: hold Power + Volume Down for about 10-20 s until Fastboot Mode shows, choose "Start" (or power off and on). While the boot animation runs, hold Volume Down until "Safe mode" shows in the corner. Third-party apps, including Shamash, are disabled there, so Settings and adb work. Reboot normally afterwards.
+3. **Factory reset from recovery (last resort).** Hold Power + Volume Down until Fastboot Mode shows, use the volume keys to select "Recovery Mode", press Power. At "No command" hold Power and press Volume Up once. Pick "Wipe data/factory reset", confirm, then "Reboot system now".
+
 ## Pull recordings
 
 ```
@@ -224,6 +232,7 @@ Status as of 2026-11-25 01:00, Pixel 7 Pro, Android 16 (API 36), debug build, de
 - [x] 6. Home, Back, Recents, swipe from top, swipe from bottom: focus stays in the app, lock task state `LOCKED`. *`remove-active-admin` not yet exercised.*
 - [x] 7. `.env` and `local.properties` are untracked; the key is only in `BuildConfig`.
 - [ ] 8. Provisioning steps worked up to the reboot; README updated with what was learned.
+- [x] 2026-11-25: after a reboot the lock task blocked the USB-debugging dialog, adb stayed `unauthorized` and a factory reset was needed. This is why the escape hatches exist (three-finger hold, safe boot allowed).
 
 Also seen:
 

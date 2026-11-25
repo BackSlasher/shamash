@@ -12,7 +12,6 @@ import androidx.compose.foundation.background
 import net.backslasher.shamash.BuildConfig
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
-import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -34,6 +33,7 @@ import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.TileMode
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.input.pointer.pointerInput
+import kotlinx.coroutines.withTimeoutOrNull
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextAlign
@@ -48,6 +48,7 @@ import net.backslasher.shamash.core.ErrorKind
 import net.backslasher.shamash.core.ScreenModel
 import net.backslasher.shamash.core.ShamashState
 
+private const val MAINTENANCE_HOLD_MS = 5_000L
 private const val TWO_PI = (2 * Math.PI).toFloat()
 
 /** The whole screen is one touch target. Renders [model]; owns no state besides animation phases. */
@@ -57,7 +58,10 @@ fun ShamashScreen(
     onTap: () -> Unit,
     onPressDown: () -> Unit = {},
     onPressUp: () -> Unit = {},
+    maintenance: Boolean = false,
+    onMaintenanceUnlock: () -> Unit = {},
 ) {
+    val unlock by rememberUpdatedState(onMaintenanceUnlock)
     val tap by rememberUpdatedState(onTap)
     val down by rememberUpdatedState(onPressDown)
     val up by rememberUpdatedState(onPressUp)
@@ -85,13 +89,44 @@ fun ShamashScreen(
                 awaitEachGesture {
                     awaitFirstDown()
                     down()
-                    val release = waitForUpOrCancellation()
+                    // Maintenance hatch: 3+ fingers held continuously for MAINTENANCE_HOLD_MS.
+                    // Such a gesture is never a tap, and its events are consumed once it fires.
+                    var multiTouch = false
+                    var fired = false
+                    var holdStart: Long? = null
+                    var last: androidx.compose.ui.input.pointer.PointerEvent
+                    while (true) {
+                        val remaining = holdStart?.let { MAINTENANCE_HOLD_MS - (System.currentTimeMillis() - it) }
+                        val event = if (remaining != null && !fired) {
+                            withTimeoutOrNull(remaining.coerceAtLeast(1)) { awaitPointerEvent() }
+                        } else {
+                            awaitPointerEvent()
+                        }
+                        if (event == null) { // timeout: fingers still down, nothing changed
+                            fired = true
+                            unlock()
+                            continue
+                        }
+                        last = event
+                        val pressed = event.changes.count { it.pressed }
+                        if (pressed >= 2) multiTouch = true
+                        if (pressed >= 3) { if (holdStart == null) holdStart = System.currentTimeMillis() } else holdStart = null
+                        if (fired) event.changes.forEach { it.consume() }
+                        if (pressed == 0) break
+                    }
                     up()
-                    if (release != null) tap()
+                    if (!multiTouch && !last.changes.any { it.isConsumed }) tap()
                 }
             },
         contentAlignment = Alignment.Center,
     ) {
+        if (maintenance) {
+            BasicText(
+                "maintenance mode \u2013 kiosk unlocked",
+                modifier = Modifier.align(Alignment.BottomCenter).padding(16.dp),
+                style = textStyle(14).copy(textDirection = TextDirection.Ltr, textAlign = TextAlign.Center),
+            )
+        }
         CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
             if (model.state == ShamashState.ERROR) {
                 ErrorContent(model)

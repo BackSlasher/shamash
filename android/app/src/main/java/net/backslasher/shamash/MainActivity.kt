@@ -20,14 +20,19 @@ import java.io.File
 import net.backslasher.shamash.kiosk.DeviceInfo
 import net.backslasher.shamash.kiosk.KioskPolicy
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import net.backslasher.shamash.audio.AndroidCues
 import net.backslasher.shamash.core.ErrorKind
 import net.backslasher.shamash.core.ScreenModel
 import net.backslasher.shamash.core.ShamashState
 import net.backslasher.shamash.ui.ShamashScreen
 
+/** Set by the maintenance gesture; survives activity recreation, cleared when the process dies. */
+private var maintenanceUnlocked = false
+
 class MainActivity : ComponentActivity() {
     private val viewModel: ShamashViewModel by viewModels()
     private var micGranted by mutableStateOf(false)
+    private var maintenance by mutableStateOf(false)
 
     private val micPermission =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { micGranted = it }
@@ -48,6 +53,8 @@ class MainActivity : ComponentActivity() {
         if (!micGranted) micPermission.launch(Manifest.permission.RECORD_AUDIO)
 
         val controller = viewModel.controller
+        val cues = AndroidCues(this)
+        maintenance = maintenanceUnlocked
         setContent {
             BackHandler { } // absorb the back gesture
             val model by controller.model.collectAsStateWithLifecycle()
@@ -66,6 +73,13 @@ class MainActivity : ComponentActivity() {
                 },
                 onPressDown = { if (micGranted) controller.onPressDown() },
                 onPressUp = { if (micGranted) controller.onPressUp() },
+                maintenance = maintenance,
+                onMaintenanceUnlock = {
+                    maintenanceUnlocked = true
+                    maintenance = true
+                    try { stopLockTask() } catch (_: Exception) { }
+                    cues.stop() // best-effort haptic and tone
+                },
             )
         }
     }
@@ -73,7 +87,7 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         micGranted = hasMic()
-        KioskPolicy.enterLockTaskIfPossible(this)
+        if (!maintenanceUnlocked) KioskPolicy.enterLockTaskIfPossible(this)
     }
 
     private fun hasMic() =
