@@ -256,12 +256,34 @@ Also seen:
 
 Still to check with a person present:
 
-- [ ] Spoken Hebrew: live partials appear while speaking, final transcript correct.
+- [x] Spoken Hebrew: live partials appear while speaking, final transcript correct. Field test 2026-11-25 12:20–12:41 at the grandfather's home, see below.
 - [ ] Start and stop tones play from the bottom speaker, at a usable volume.
 - [ ] Haptic feedback present or absent (note which).
 - [ ] Hebrew text size and legibility from the stand; mixed Hebrew/English order.
 - [x] A session longer than 25 s (periodic commit) and the full 120 s auto-stop, on the current build (silent room; see above).
 - [x] `adb shell dpm remove-active-admin ...` then re-provision.
+
+### Field test with the user (2026-11-25, another house, its Wi-Fi)
+
+Owner's report: worked very well once the user was told to press again when done. Two UX findings: he did not know to stop talking / press again, and other people's speech in the room was picked up. Recordings pulled afterwards (seven sessions):
+
+| Session | Length | First partial | Stop → final | Result |
+|---|---|---|---|---|
+| 12:20:52 | 18 s | 1.5 s | 1.2 s | "שלום. זו בדיקה. מה שלומך?" realtime and batch identical |
+| 12:21:28 | 120 s auto-stop | — | — | Nobody addressed the phone. Batch failed: `Unable to resolve host api.elevenlabs.io` (Wi-Fi reconnected 12:23:33–12:24:50 per logcat); WAV saved |
+| 12:36:02 | 21 s | 2.2 s | 4.9 s | User's request plus the owner's instruction, both transcribed; batch slightly cleaner than realtime |
+| 12:36:30 | 4 s | 1.3 s | 2.8 s | "שנה את הרווח בין השורות לאחד וחצי." clean |
+| 12:40:50 | 4 s | 4.3 s | 1.9 s | Empty transcripts (no speech) |
+| 12:40:56 | 0.1 s | — | — | Double tap: batch HTTP 400 "File is corrupted" (fixed: sessions under `minBatchAudioMs` skip the upload) |
+
+What the recordings show:
+
+- **Realtime hallucinates on crosstalk; batch does not.** For the 120 s session the live stream produced 130 partials of fluent-looking but meaningless Hebrew from faint background speech. Batch `scribe_v3` on the same WAV (plain and with `diarize=true`) found 7 words in total, a snippet of someone's phone call at 41.6–44.2 s, and nothing else. The PC side must treat realtime text as display only and trust the batch result.
+- **Diarization works on this mic.** The 21 s session separates the user (speaker 0: "שנה לי את הרווח בין השורות לאחד וחצי. אז הוא משנה?") from the owner (speaker 1: "לא. … וכשאתה מסיים אתה צריך ללחוץ עוד פעם") cleanly with word timestamps. A later "keep the first speaker" rule is feasible.
+- **Transient network loss** mid-session hits the batch step while the already-open realtime socket survives. The hard-fail policy held: grey error, WAV kept.
+- Stop-to-final was 1.2–4.9 s on real speech, first partial 1.3–2.2 s.
+
+Open UX decision: auto-stop after N seconds of silence (behind a config value) so a forgotten second tap still ends the session, versus waiting for the PC side's spoken reply to make turn-taking obvious.
 
 ## PC-link spike (2026-11-25)
 

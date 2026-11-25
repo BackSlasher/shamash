@@ -225,9 +225,14 @@ class SessionController(
             } else {
                 try {
                     realtimeFinal = withTimeout(config.realtimeFinishTimeoutMs) { session.finish() }
-                    val result = withTimeout(config.batchTimeoutMs) { transcriber.transcribeBatch(f.wav) }
-                    batchText = result.text
-                    batchRaw = result.raw
+                    if (stopAt - listeningStartedAt < config.minBatchAudioMs) {
+                        // A double tap: nothing to transcribe, and Scribe rejects near-empty files.
+                        batchText = ""
+                    } else {
+                        val result = withTimeout(config.batchTimeoutMs) { transcriber.transcribeBatch(f.wav) }
+                        batchText = result.text
+                        batchRaw = result.raw
+                    }
                     stopToFinalMs = clock.elapsedMs() - stopAt
                 } catch (e: TimeoutCancellationException) {
                     error = "Timed out waiting for the final transcript (${e.message})"

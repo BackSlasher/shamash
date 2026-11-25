@@ -123,6 +123,22 @@ class SessionControllerTest {
     }
 
     @Test
+    fun doubleTapSkipsBatchUploadWithoutError() = runTest {
+        // failBatch = true proves the upload is never attempted for a near-empty session.
+        val e = env(transcriber = FakeTranscriber(failBatch = true))
+        e.controller.onTap()
+        advanceTimeBy(300); runCurrent() // open takes 200 ms, so ~100 ms of listening
+        assertEquals(ShamashState.LISTENING, e.state)
+        e.controller.onTap()
+        advanceTimeBy(5_000); runCurrent()
+        assertEquals(ShamashState.IDLE, e.state)
+        val rec = e.record()
+        assertNull(rec.error)
+        assertEquals("", rec.batchText)
+        assertEquals(1, e.files("wav").size)
+    }
+
+    @Test
     fun openFailureGoesToErrorAndSavesNothing() = runTest {
         val e = env(transcriber = FakeTranscriber(failOpen = true))
         e.controller.onTap()

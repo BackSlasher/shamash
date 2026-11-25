@@ -8,6 +8,11 @@ enum class TriggerMode { TAP_TOGGLE, HOLD }
 data class ShamashConfig(
     val triggerMode: TriggerMode = TriggerMode.TAP_TOGGLE,
     val maxListeningMs: Long = 120_000L,
+    /**
+     * Sessions shorter than this (a double tap) skip the batch upload: the WAV has no usable audio
+     * and Scribe answers HTTP 400 "File is corrupted" for a 0.1 s file (seen in the field 2026-11-25).
+     */
+    val minBatchAudioMs: Long = 500L,
     val connectTimeoutMs: Long = 8_000L,
     /** Budget for `session.finish()` (final commit and committed_transcript). */
     val realtimeFinishTimeoutMs: Long = 10_000L,
