@@ -78,7 +78,7 @@ vpk "[win]" pack --packId Shamash.Pc --packVersion "$SHAMASH_VERSION_NAME" --pac
     fi
     run_args+=(-e GITHUB_TOKEN="$token")
     run "$inner"'
-vpk "[win]" upload github --repoUrl '"$repo_url"' --publish --releaseName "Shamash PC $SHAMASH_VERSION_NAME" --tag "v$SHAMASH_VERSION_NAME" --token "$GITHUB_TOKEN" --channel win --outputDir out/releases "$@"
+vpk "[win]" upload github --repoUrl '"$repo_url"' --publish --merge --releaseName "Shamash $SHAMASH_VERSION_NAME" --tag "v$SHAMASH_VERSION_NAME" --token "$GITHUB_TOKEN" --channel win --outputDir out/releases "$@"
 ' "$@"
     ;;
   vpk)

@@ -37,12 +37,12 @@ vpk "[win]" pack --packId Shamash.Pc --packVersion $SHAMASH_VERSION_NAME --packD
 `upload` runs:
 
 ```
-vpk "[win]" upload github --repoUrl https://github.com/BackSlasher/shamash --publish \
-  --releaseName "Shamash PC $SHAMASH_VERSION_NAME" --tag "v$SHAMASH_VERSION_NAME" \
+vpk "[win]" upload github --repoUrl https://github.com/BackSlasher/shamash --publish --merge \
+  --releaseName "Shamash $SHAMASH_VERSION_NAME" --tag "v$SHAMASH_VERSION_NAME" \
   --token $GITHUB_TOKEN --channel win --outputDir out/releases
 ```
 
-The token is taken from `GITHUB_TOKEN`, else from `gh auth token` on the host, and passed into the container as an environment variable (not echoed). `--channel win` is explicit because `vpk upload` defaults the channel to the host OS (`linux` here) and would not find the Windows files.
+The token is taken from `GITHUB_TOKEN`, else from `gh auth token` on the host, and passed into the container as an environment variable (not echoed). `--channel win` is explicit because `vpk upload` defaults the channel to the host OS (`linux` here) and would not find the Windows files. `--merge` lets vpk add its assets to a release that already exists; without it vpk stops with "There is already an existing release tagged 'v0.1.0'" (seen 2026-11-25). The phone APK is published first by `tools/release.sh --publish` (its `gh release create` refuses an existing tag), then this upload merges into the same release, so one tag carries both halves.
 
 The `vpk` version (`vpk_version` in `build.sh`) must equal the `Velopack` package version in `Shamash.Pc.csproj` (both 1.2.161).
 
@@ -60,20 +60,19 @@ The `vpk` version (`vpk_version` in `build.sh`) must equal the `Velopack` packag
 1. `Shamash.Pc-win-Setup.exe` is a one-click, per-user installer: it installs under `%LocalAppData%\Shamash.Pc` without admin rights or prompts and creates Desktop and Start Menu shortcuts.
 2. The installed app checks GitHub Releases at startup and every 6 hours. A found update is downloaded in the background.
 3. Once inside the update window the app calls `ApplyUpdatesAndRestart`. Velopack keeps the previous version in its own folder and switches the `current` folder to the new one.
-4. Releasing: bump `SHAMASH_VERSION_NAME`, run `publish`, `pack`, `upload`. Each version needs a new, higher version number.
+4. Releasing: bump `SHAMASH_VERSION_NAME` (same value as the APK release), run the phone `tools/release.sh --publish`, then `pc/build.sh publish`, `pack`, `upload`. Each version needs a new, higher version number.
 
 ## Verified (2026-11-25, on Linux in podman)
 
 - `pc/build.sh test`: 20 tests passed.
 - `pc/build.sh publish` produces a win-x64 single-file `Shamash.Pc.exe` (about 76 MB).
 - `pc/build.sh pack` works on Linux: vpk 1.2.161 logs "Directive enabled for cross-compiling from Linux (current os) to Windows" and produces `Shamash.Pc-win-Setup.exe`, `Shamash.Pc-0.1.0-full.nupkg`, `Shamash.Pc-win-Portable.zip`, `RELEASES`, `releases.win.json`, `assets.win.json`.
-- `vpk upload github --help` flags match those used in `build.sh`.
+- `pc/build.sh upload` with `--merge` attached `Shamash.Pc-win-Setup.exe`, `Shamash.Pc-0.1.0-full.nupkg`, `Shamash.Pc-win-Portable.zip`, `releases.win.json` and `RELEASES` to the existing release <https://github.com/BackSlasher/shamash/releases/tag/v0.1.0>, next to the phone APK.
 
 ## Not verified
 
 - Anything running on Windows: that the exe starts, that Setup.exe installs, shortcuts, per-user install location, uninstall.
-- The actual update cycle (check, download, apply, restart), the update window behaviour at runtime, and `IsInstalled` detection.
-- `upload` has never been run (needs a token and creates a public release); the GitHub source against the real repo is untested.
+- The actual update cycle (check, download, apply, restart), the update window behaviour at runtime, and `IsInstalled` detection. The GitHub source reading `releases.win.json` from the real repo is untested until a second release exists.
 - Release assets are unsigned; Windows SmartScreen may warn on first run.
 - vpk warns that `VelopackApp.Run()` "does not look like your application's entry point" because of top-level async `Main`. It is the first statement; whether this matters on Windows is unverified.
 - Delta packages do not exist yet (first release); delta updates are untested.
