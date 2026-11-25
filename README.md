@@ -157,6 +157,8 @@ adb shell am broadcast -a net.backslasher.shamash.SPEAK --es text "שלום, ז�
 
 Latency: `adb logcat -s Shamash | grep tts:` prints `tts: first audio after N ms, total M ms, bytes B`. "First audio" is request start to first PCM bytes (add a few ms for the track to start). Desk measurement with the live test: 386 ms first audio, 660 ms total, for a 3 s sentence. Live test: `./build.sh testDebugUnitTest -PliveApi=true --tests '*Live*'`.
 
+On the phone (2026-11-25 13:05, Wi-Fi): a 57-character sentence gave first audio after 480 ms and 4.8 s of speech drained in 5.3 s, green while speaking, back to Idle with the text afterwards. A tap 2 s into a 9.6 s sentence cut the sound and returned to Idle. The first build sat on the green screen for 60 s after every sentence: `AudioTrackSink.finish()` waited for `playbackHeadPosition` to reach the written frame count after calling `stop()`, and on this phone the head position stops advancing at `stop()`. It now drains first and stops after. Not yet judged by a person: loudness and intelligibility from the bottom speaker (media volume was 8 of 25), and whether George is the right voice. The project key lacks `voices_read`, so voices cannot be listed with it.
+
 ## Install for development (ordinary app)
 
 The debug APK is `testOnly`, so it needs `-t`:

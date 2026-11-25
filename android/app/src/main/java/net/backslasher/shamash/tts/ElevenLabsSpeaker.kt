@@ -77,7 +77,10 @@ class ElevenLabsSpeaker(
                         val n = src.read(buf, off, buf.size - off)
                         if (n < 0) break
                         var len = off + n
-                        if (firstMs < 0 && len > 0) firstMs = (System.nanoTime() - started) / 1_000_000
+                        if (firstMs < 0 && len > 0) {
+                            firstMs = (System.nanoTime() - started) / 1_000_000
+                            Log.d(TAG, "tts: first audio after $firstMs ms")
+                        }
                         if (len % 2 == 1) { carry = buf[len - 1].toInt() and 0xFF; len-- }
                         if (len > 0) { sink.write(buf, 0, len); total += len }
                     }

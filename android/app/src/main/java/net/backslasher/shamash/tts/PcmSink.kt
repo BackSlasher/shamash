@@ -59,10 +59,16 @@ class AudioTrackSink(private val sampleRate: Int) : PcmSink {
 
     override fun finish() {
         if (stopped) return
-        track.stop() // streaming mode: plays what is queued, then stops
-        val deadline = System.currentTimeMillis() + 60_000
-        while (!stopped && track.playbackHeadPosition < writtenFrames && System.currentTimeMillis() < deadline) {
+        // Wait for the queued audio to drain while the track is still playing. On the Pixel 7 Pro
+        // playbackHeadPosition stops advancing once stop() is called, so stopping first made this
+        // wait for its whole deadline (seen 2026-11-25: 60 s of green screen after 3 s of speech).
+        val deadline = System.currentTimeMillis() + (writtenFrames * 1000 / sampleRate) + 2_000
+        while (!stopped && track.playbackHeadPosition.toLong() < writtenFrames && System.currentTimeMillis() < deadline) {
             Thread.sleep(20)
+        }
+        try {
+            track.stop()
+        } catch (_: IllegalStateException) {
         }
     }
 
