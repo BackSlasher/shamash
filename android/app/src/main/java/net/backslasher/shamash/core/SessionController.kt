@@ -33,6 +33,8 @@ import net.backslasher.shamash.storage.SessionStore
 import net.backslasher.shamash.transcribe.StreamingSession
 import net.backslasher.shamash.transcribe.Transcriber
 import net.backslasher.shamash.transcribe.TranscriberError
+import net.backslasher.shamash.tts.FakeSpeaker
+import net.backslasher.shamash.tts.Speaker
 
 /**
  * The one state machine. Call methods from a single thread (the UI thread); [scope] should be
@@ -45,6 +47,7 @@ class SessionController(
     private val transcriber: Transcriber,
     private val store: SessionStore,
     private val cues: Cues,
+    private val speaker: Speaker = FakeSpeaker(),
     private val clock: Clock = SystemClock,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) {
@@ -54,19 +57,22 @@ class SessionController(
     private var lastFinal = ""
     private var sessionJob: Job? = null
     private var stopSignal: CompletableDeferred<Unit>? = null
+    private var speakJob: Job? = null
 
     // ---- input ----
 
     fun onTap() {
         if (config.triggerMode == TriggerMode.HOLD) {
             if (_model.value.state == ShamashState.ERROR) clearError()
+            if (_model.value.state == ShamashState.SPEAKING) cancelSpeaking()
             return
         }
         when (_model.value.state) {
             ShamashState.IDLE -> startSession()
             ShamashState.LISTENING -> stopSignal?.complete(Unit)
             ShamashState.ERROR -> clearError()
-            ShamashState.WORKING, ShamashState.SPEAKING -> Unit // reserved for interruption later
+            ShamashState.SPEAKING -> cancelSpeaking()
+            ShamashState.WORKING -> Unit // reserved for interruption later
         }
     }
 
@@ -75,8 +81,32 @@ class SessionController(
         when (_model.value.state) {
             ShamashState.IDLE -> startSession()
             ShamashState.ERROR -> clearError()
+            ShamashState.SPEAKING -> cancelSpeaking()
             else -> Unit
         }
+    }
+
+    /** Speak [text] aloud (green). Only from IDLE; a tap while speaking interrupts. Keeps the text on screen. */
+    fun speak(text: String) {
+        if (_model.value.state != ShamashState.IDLE || text.isBlank()) return
+        lastFinal = text
+        setModel(ShamashState.SPEAKING, text, isFinal = true)
+        speakJob = scope.launch {
+            try {
+                speaker.speak(text)
+                setModel(ShamashState.IDLE, text, isFinal = true)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                fail("Speech failed: ${describe(e)}", classify(e))
+            }
+        }
+    }
+
+    private fun cancelSpeaking() {
+        speakJob?.cancel()
+        speakJob = null
+        setModel(ShamashState.IDLE, lastFinal, lastFinal.isNotEmpty())
     }
 
     fun onPressUp() {

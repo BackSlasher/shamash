@@ -61,6 +61,7 @@ class MainActivity : ComponentActivity() {
         if (!micGranted) micPermission.launch(Manifest.permission.RECORD_AUDIO)
 
         val controller = viewModel.controller
+        DebugHooks.speak = controller::speak
         val cues = AndroidCues(this)
         maintenance = maintenanceUnlocked
         setContent {
@@ -93,6 +94,7 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
+        DebugHooks.speak = null
         screenKeeper.stop()
         super.onDestroy()
     }

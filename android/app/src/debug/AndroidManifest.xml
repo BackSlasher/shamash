@@ -10,5 +10,12 @@
                 <action android:name="net.backslasher.shamash.PCLINK_PROBE" />
             </intent-filter>
         </receiver>
+        <receiver
+            android:name=".tts.SpeakReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="net.backslasher.shamash.SPEAK" />
+            </intent-filter>
+        </receiver>
     </application>
 </manifest>

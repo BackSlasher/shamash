@@ -62,6 +62,17 @@ Observed live (2026-11-25):
 
 Realtime concurrency on the Free plan is 6 sessions; irrelevant for one phone.
 
+### ElevenLabs text-to-speech
+
+Checked 2026-11-25 against `elevenlabs.io/docs/api-reference/text-to-speech/convert-as-stream` and `elevenlabs.io/docs/models`, then against the live API with the project key.
+
+- **Endpoint:** `POST https://api.elevenlabs.io/v1/text-to-speech/{voice_id}/stream`, header `xi-api-key`, JSON body `{"text", "model_id", "language_code"}`. Response is streamed audio.
+- **`output_format`** (query, default `mp3_44100_128`): `pcm_8000/16000/22050/24000/32000/44100/48000`, `mp3_*`, `opus_48000_*`, `ulaw_8000`, `alaw_8000`. We use `pcm_16000` (raw 16-bit mono LE, no decoder needed).
+- **`language_code`:** ISO 639-1, so `he` (not `heb`, unlike speech-to-text). Ignored by models that do not support it; the API actually answers 400 `unsupported_language`.
+- **Hebrew models (differs from what the brief expected):** the models page lists Hebrew only for `eleven_v3`, `eleven_v4` and `eleven_v4_turbo`. `eleven_flash_v2_5` and `eleven_multilingual_v2` do NOT support Hebrew; the live API rejects them with `Model '...' does not support language_code 'he'`.
+- **Measured** (curl, `pcm_16000`, 30-character Hebrew sentence, time to first byte): `eleven_v3` 1.6 s, `eleven_v4` 0.9 s, `eleven_v4_turbo` 0.3 s. The docs give `eleven_v4_turbo` ~100 ms median model latency. Default: `eleven_v4_turbo`.
+- **Voice:** the project key has no `voices_read` (or `models_read`) permission, so `GET /v1/voices` and `/v1/models` answer 401 and no voice could be checked for Hebrew labels. Default is the premade George voice from the docs sample, `JBFqnCBsd6RMkjVDRZzb`, which was verified to speak Hebrew with `eleven_v3` and `eleven_v4_turbo`. To browse voices, enable `voices_read` on the key (or pick in the web UI) and set `ttsVoiceId`.
+
 ### Android device owner and kiosk
 
 Sources: `developer.android.com/work/dpc/dedicated-devices/{lock-task-mode,cookbook}`, `.../reference/android/app/admin/DevicePolicyManager`, `.../reference/android/R.attr#lockTaskMode`, `.../guide/topics/manifest/application-element`.
@@ -133,6 +144,18 @@ Unit tests never touch the network. One opt-in live test streams `tools/fixtures
 `tools/rt_smoke.py` is a Python realtime smoke test (needs the `websockets` package): `set -a; . .env; set +a; python3 tools/rt_smoke.py tools/fixtures/hebrew_v3.wav`. See `tools/fixtures/README.md`.
 
 Build with `-PfakeTranscriber=true` for UI or microphone work without network. Logs use tag `Shamash`.
+
+## Spoken reply (TTS spike)
+
+Reserved green "Speaking" state. `SessionController.speak(text)` works only from idle, shows the text, streams ElevenLabs PCM into an `AudioTrack` (media usage, speech content type, bottom speaker) and returns to idle keeping the text. A tap while speaking cuts the sound and returns to idle. Defaults in `ShamashConfig`: `ttsModelId = eleven_v4_turbo`, `ttsVoiceId = JBFqnCBsd6RMkjVDRZzb` (George, premade), `ttsLanguageCode = he`. Fake builds (`-PfakeTranscriber=true`) use a silent `FakeSpeaker`.
+
+Debug builds only, with the app open:
+
+```
+adb shell am broadcast -a net.backslasher.shamash.SPEAK --es text "שלום, זאת בדיקה" -p net.backslasher.shamash
+```
+
+Latency: `adb logcat -s Shamash | grep tts:` prints `tts: first audio after N ms, total M ms, bytes B`. "First audio" is request start to first PCM bytes (add a few ms for the track to start). Desk measurement with the live test: 386 ms first audio, 660 ms total, for a 3 s sentence. Live test: `./build.sh testDebugUnitTest -PliveApi=true --tests '*Live*'`.
 
 ## Install for development (ordinary app)
 

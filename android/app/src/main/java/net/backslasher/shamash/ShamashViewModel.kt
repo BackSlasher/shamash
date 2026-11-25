@@ -11,6 +11,8 @@ import net.backslasher.shamash.core.SessionController
 import net.backslasher.shamash.storage.FileSessionStore
 import net.backslasher.shamash.transcribe.ElevenLabsTranscriber
 import net.backslasher.shamash.transcribe.FakeTranscriber
+import net.backslasher.shamash.tts.ElevenLabsSpeaker
+import net.backslasher.shamash.tts.FakeSpeaker
 import okhttp3.OkHttpClient
 
 /** Holds the controller so rotation or recreation does not kill a session. Hand-built dependency graph. */
@@ -28,5 +30,10 @@ class ShamashViewModel(app: Application) : AndroidViewModel(app) {
         },
         store = FileSessionStore(File(app.getExternalFilesDir(null) ?: app.filesDir, "recordings")),
         cues = AndroidCues(app),
+        speaker = if (config.useFakeTranscriber) {
+            FakeSpeaker()
+        } else {
+            ElevenLabsSpeaker(BuildConfig.ELEVENLABS_KEY, config, OkHttpClient())
+        },
     )
 }

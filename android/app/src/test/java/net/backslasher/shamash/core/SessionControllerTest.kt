@@ -20,6 +20,8 @@ import net.backslasher.shamash.config.TriggerMode
 import net.backslasher.shamash.storage.FileSessionStore
 import net.backslasher.shamash.storage.SessionRecord
 import net.backslasher.shamash.transcribe.FakeTranscriber
+import net.backslasher.shamash.tts.FakeSpeaker
+import net.backslasher.shamash.tts.Speaker
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -58,6 +60,7 @@ class SessionControllerTest {
         val dir: File,
         val config: ShamashConfig,
         val transcriber: FakeTranscriber = FakeTranscriber(),
+        val speaker: Speaker = FakeSpeaker(),
     ) {
         val capture = FakeCapture()
         val cues = FakeCues()
@@ -68,6 +71,7 @@ class SessionControllerTest {
             transcriber = transcriber,
             store = FileSessionStore(dir),
             cues = cues,
+            speaker = speaker,
             clock = object : Clock {
                 override fun elapsedMs() = scope.testScheduler.currentTime
                 override fun wallMs() = 1_700_000_000_000L + scope.testScheduler.currentTime
@@ -82,7 +86,8 @@ class SessionControllerTest {
     private fun TestScope.env(
         config: ShamashConfig = ShamashConfig(appVersion = "test"),
         transcriber: FakeTranscriber = FakeTranscriber(),
-    ) = Env(this, File(tmp.root, "recordings"), config, transcriber)
+        speaker: Speaker = FakeSpeaker(),
+    ) = Env(this, File(tmp.root, "recordings"), config, transcriber, speaker)
 
     @Test
     fun tapGoesWorkingThenListening_secondTapReturnsToIdleWithBatchText() = runTest {
@@ -243,5 +248,57 @@ class SessionControllerTest {
         assertEquals(ShamashState.LISTENING, e.state)
         e.controller.onPressUp(); advanceTimeBy(5_000); runCurrent()
         assertEquals(ShamashState.IDLE, e.state)
+    }
+
+    @Test
+    fun speakGoesGreenThenBackToIdleKeepingTheText() = runTest {
+        val e = env(speaker = FakeSpeaker(msPerChar = 100))
+        e.controller.speak("שלום") // 400 ms
+        assertEquals(ShamashState.SPEAKING, e.state)
+        assertEquals("שלום", e.controller.model.value.transcript)
+        advanceTimeBy(300); runCurrent()
+        assertEquals(ShamashState.SPEAKING, e.state)
+        advanceTimeBy(200); runCurrent()
+        assertEquals(ShamashState.IDLE, e.state)
+        assertEquals("שלום", e.controller.model.value.transcript)
+        assertTrue(e.controller.model.value.isFinal)
+    }
+
+    @Test
+    fun speakIsIgnoredOutsideIdle() = runTest {
+        val e = env()
+        e.controller.onTap() // WORKING
+        e.controller.speak("שלום")
+        assertEquals(ShamashState.WORKING, e.state)
+    }
+
+    @Test
+    fun tapWhileSpeakingCancelsTheSpeech() = runTest {
+        var cancelled = false
+        val speaker = object : Speaker {
+            override suspend fun speak(text: String) {
+                try { delay(60_000) } catch (c: kotlinx.coroutines.CancellationException) { cancelled = true; throw c }
+            }
+        }
+        val e = env(speaker = speaker)
+        e.controller.speak("משפט ארוך")
+        advanceTimeBy(1_000); runCurrent()
+        assertEquals(ShamashState.SPEAKING, e.state)
+        e.controller.onTap()
+        runCurrent()
+        assertEquals(ShamashState.IDLE, e.state)
+        assertEquals("משפט ארוך", e.controller.model.value.transcript)
+        assertTrue(cancelled)
+        advanceTimeBy(70_000); runCurrent()
+        assertEquals(ShamashState.IDLE, e.state)
+    }
+
+    @Test
+    fun speakerFailureShowsError() = runTest {
+        val e = env(speaker = object : Speaker {
+            override suspend fun speak(text: String) { throw java.io.IOException("boom") }
+        })
+        e.controller.speak("שלום"); runCurrent()
+        assertEquals(ShamashState.ERROR, e.state)
     }
 }

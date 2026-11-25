@@ -22,6 +22,11 @@ data class ShamashConfig(
     val languageCode: String = "heb",
     val batchModelId: String = "scribe_v3",
     val realtimeModelId: String = "scribe_v3_live",
+    /** TTS (verified 2026-11-25): only eleven_v3 / eleven_v4 / eleven_v4_turbo accept language_code "he". */
+    val ttsModelId: String = "eleven_v4_turbo",
+    /** Premade "George" (from the docs sample), verified to speak Hebrew with the project key. */
+    val ttsVoiceId: String = "JBFqnCBsd6RMkjVDRZzb",
+    val ttsLanguageCode: String = "he",
     val appVersion: String = "dev",
     /**
      * True: full kiosk (lock task, status bar disabled; Quick Settings unreachable, so Wi-Fi can only
