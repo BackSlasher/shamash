@@ -233,26 +233,48 @@ adb uninstall net.backslasher.shamash      # optional
 
 If the lock task is still active after this, press Home or run `force-stop` again. The persistent HOME preference is cleared together with the owner; the phone then asks for a launcher again. Policies applied while owner (status bar, keyguard, restrictions, stay-awake) are lifted when the owner is removed.
 
-A release build is not `testOnly`, so `remove-active-admin` refuses it: the only way out is a factory reset. The app sets `DISALLOW_FACTORY_RESET`, which blocks the Settings route; the recovery-menu route is unverified. Use the debug build while iterating.
+A release build is not `testOnly`, so `remove-active-admin` refuses it: the only way out is a factory reset. The app sets `DISALLOW_FACTORY_RESET`, which blocks the Settings route; the recovery-menu route (Power + Volume Down into the bootloader, Recovery, "Wipe data/factory reset") still works with that restriction set, verified during the 2026-11-25 lockout. Use the debug build while iterating.
 
 ## Release and updates (Obtainium)
 
-Releases are signed APKs on GitHub Releases, installed and updated by Obtainium.
+Releases are signed APKs on GitHub Releases at <https://github.com/BackSlasher/shamash/releases>, installed and updated by Obtainium. The repository is public, so Obtainium needs no token.
+
+The signing keystore lives outside the repo at `~/.config/shamash/release.jks` (generated 2026-11-25, RSA 4096, alias `shamash`, DN `CN=Shamash, O=Shamash`, certificate SHA-256 `10dc7b56…b16091`). Its four variables (`SHAMASH_KEYSTORE_FILE`, `SHAMASH_KEYSTORE_PASSWORD`, `SHAMASH_KEY_ALIAS`, `SHAMASH_KEY_PASSWORD`) sit in the git-ignored `.env`, which both `build.sh` and `tools/release.sh` read. Back up the `.jks` and those lines: a device-owner app cannot be replaced by a differently signed build without a factory reset.
 
 ```
-export SHAMASH_KEYSTORE_FILE=/path/to/release.jks SHAMASH_KEYSTORE_PASSWORD=... \
-       SHAMASH_KEY_ALIAS=... SHAMASH_KEY_PASSWORD=... \
-       SHAMASH_VERSION_NAME=0.2.0 SHAMASH_VERSION_CODE=2
-tools/release.sh             # builds, prints the `gh release create` command
-tools/release.sh --publish   # also runs it
+SHAMASH_VERSION_NAME=0.2.0 SHAMASH_VERSION_CODE=2 tools/release.sh             # builds, prints the `gh release create` command
+SHAMASH_VERSION_NAME=0.2.0 SHAMASH_VERSION_CODE=2 tools/release.sh --publish   # also runs it
 ```
 
-The script refuses to run when `jj diff` shows uncommitted changes. `SHAMASH_VERSION_CODE` must increase with every release.
+The script refuses to run when `jj diff` shows uncommitted changes. `SHAMASH_VERSION_CODE` must increase with every release. Push `main` first: the tag is created on the default branch's head on GitHub.
 
-- The APK must be signed with the same keystore every time, or Android rejects the update. Keep the keystore backed up; it is git-ignored and must stay so. This repo does not create one.
-- The first install on the kiosk phone is manual: `adb install -r <signed apk>` (release is not `testOnly`, so no `-t`). A phone that has the debug build must be uninstalled first (different signature).
-- In Obtainium add the GitHub repository URL as an app source; it tracks GitHub Releases and installs the APK.
-- A release build cannot have device owner removed over adb; iterate with debug.
+Published so far:
+
+| Tag | versionCode | APK | Notes |
+|---|---|---|---|
+| v0.1.0 (2026-11-25) | 1 | `shamash-0.1.0.apk`, 1.7 MB, R8-minified | First signed release. Built and signature-verified, not yet run on the phone. |
+
+### Switching the phone from the debug build to releases
+
+The phone currently runs the debug build as device owner. Release and debug signatures differ, so the switch is one manual round over adb, with the phone on and connected:
+
+```
+adb shell dpm remove-active-admin net.backslasher.shamash/.kiosk.ShamashAdminReceiver   # allowed: debug is testOnly
+adb uninstall net.backslasher.shamash
+adb install -r shamash-0.1.0.apk                                                       # no -t: release is not testOnly
+adb shell dpm set-device-owner net.backslasher.shamash/.kiosk.ShamashAdminReceiver
+```
+
+Then check the device checklist items that matter (boot to app, mic grant, a short session) because R8 minification only runs in release builds. After this, `remove-active-admin` no longer works; a bad release is fixed by shipping a good one, and the only way back to the debug build is a factory reset.
+
+### Obtainium
+
+1. Install Obtainium itself from its releases, <https://github.com/ImranR98/Obtainium/releases> (`adb install app-release.apk`), or from F-Droid.
+2. In Obtainium, Add App, source URL `https://github.com/BackSlasher/shamash`. It tracks GitHub Releases and picks the APK asset.
+3. Grant Obtainium "Install unknown apps" when asked.
+4. In Obtainium settings turn on background update checks.
+
+Obtainium cannot install silently on a stock phone: without Shizuku or root it downloads the APK and shows a notification, and someone taps Install. That is acceptable for the POC phone. Prompt-free updates are the device-owner self-update design in the "PC side" notes, where the app installs its own APK through `PackageInstaller`.
 
 ## Device test checklist
 
