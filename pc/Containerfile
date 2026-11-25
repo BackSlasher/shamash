@@ -1,0 +1,4 @@
+# Build image for the PC service: the official .NET SDK plus zstd, which vpk needs to build
+# delta packages between releases. Used by pc/build.sh; the image tag is a hash of this file.
+FROM mcr.microsoft.com/dotnet/sdk:10.0
+RUN apt-get update && apt-get install -y --no-install-recommends zstd && rm -rf /var/lib/apt/lists/*

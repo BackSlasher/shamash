@@ -12,8 +12,14 @@
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-image="mcr.microsoft.com/dotnet/sdk:10.0"
+containerfile="$repo_root/pc/Containerfile"
+image="localhost/shamash-pc-build:$(sha256sum "$containerfile" | cut -c1-12)"
 cache_volume="shamash-dotnet-cache"
+
+if ! podman image exists "$image"; then
+  echo ">> Building build image $image" >&2
+  podman build -t "$image" -f "$containerfile" "$repo_root/pc"
+fi
 vpk_version="1.2.161"   # keep equal to the Velopack package version in Shamash.Pc.csproj
 version="${SHAMASH_VERSION_NAME:-0.1.0}"
 repo_url="https://github.com/BackSlasher/shamash"

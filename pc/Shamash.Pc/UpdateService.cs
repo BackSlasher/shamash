@@ -8,8 +8,11 @@ namespace Shamash.Pc;
 /// <summary>Checks GitHub Releases for a new version and applies it inside the update window.</summary>
 public sealed class UpdateService(ILogger<UpdateService> log) : BackgroundService
 {
-    private static readonly TimeSpan CheckInterval = TimeSpan.FromHours(6);
     private static readonly TimeSpan WindowPoll = TimeSpan.FromMinutes(5);
+
+    /// <summary>Minutes between update checks: SHAMASH_UPDATE_CHECK_MINUTES, default 360 (6 h), minimum 1.</summary>
+    internal static TimeSpan CheckInterval =>
+        TimeSpan.FromMinutes(Math.Max(1, int.TryParse(Environment.GetEnvironmentVariable("SHAMASH_UPDATE_CHECK_MINUTES"), out var m) ? m : 360));
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -24,7 +27,8 @@ public sealed class UpdateService(ILogger<UpdateService> log) : BackgroundServic
 
         var window = UpdateWindow.Parse(Environment.GetEnvironmentVariable("SHAMASH_UPDATE_WINDOW"));
         var now = Environment.GetEnvironmentVariable("SHAMASH_UPDATE_NOW") == "1";
-        log.LogInformation("Update window {Start}-{End} local time, applyImmediately={Now}", window.Start, window.End, now);
+        log.LogInformation("Update window {Start}-{End} local time, applyImmediately={Now}, checkEvery={Interval}",
+            window.Start, window.End, now, CheckInterval);
 
         while (!stoppingToken.IsCancellationRequested)
         {
