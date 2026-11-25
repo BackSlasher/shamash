@@ -20,6 +20,7 @@ import java.io.File
 import net.backslasher.shamash.kiosk.DeviceInfo
 import net.backslasher.shamash.kiosk.KioskPolicy
 import net.backslasher.shamash.kiosk.ScreenKeeper
+import net.backslasher.shamash.config.ShamashConfig
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import net.backslasher.shamash.audio.AndroidCues
 import net.backslasher.shamash.core.ErrorKind
@@ -99,7 +100,7 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         micGranted = hasMic()
-        if (!maintenanceUnlocked) KioskPolicy.enterLockTaskIfPossible(this)
+        if (ShamashConfig.DEFAULT.lockTask && !maintenanceUnlocked) KioskPolicy.enterLockTaskIfPossible(this)
     }
 
     private fun hasMic() =

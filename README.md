@@ -75,6 +75,7 @@ Sources: `developer.android.com/work/dpc/dedicated-devices/{lock-task-mode,cookb
 - **Screen never off:** `setGlobalSetting(admin, STAY_ON_WHILE_PLUGGED_IN, (BATTERY_PLUGGED_AC or USB or WIRELESS).toString())` is still permitted for device owners, but only if `setMaximumTimeToLock` is not used. Plus `FLAG_KEEP_SCREEN_ON` on the window. `setMaximumTimeToLock(admin, 0)` means "no restriction", not "never lock", so we do not use it.
 - **ADB stays on:** `setGlobalSetting(admin, ADB_ENABLED, "1")` is still permitted for device owners. Do not add `DISALLOW_DEBUGGING_FEATURES`.
 - **Microphone pre-grant:** `setPermissionGrantState(admin, pkg, RECORD_AUDIO, PERMISSION_GRANT_STATE_GRANTED)`. On Android 12+ sensor permissions (RECORD_AUDIO, CAMERA, location...) are restricted, but "a device owner, by default, may continue granting these permissions" unless provisioning opted out with `EXTRA_PROVISIONING_SENSORS_PERMISSION_GRANT_OPT_OUT`. adb provisioning does not opt out. With `targetSdk >= 35` a disallowed grant throws `SecurityException` instead of failing silently, so wrap it and check `canAdminGrantSensorsPermissions()` first.
+- **Quick Settings never show in lock task mode.** `LOCK_TASK_FEATURE_NOTIFICATIONS` only enables the notification shade (and requires `LOCK_TASK_FEATURE_HOME`); the docs say the Quick Settings panel remains disabled. So joining a new Wi-Fi from the phone needs lock task off, which is why `ShamashConfig.lockTask` defaults to false. With `android:lockTaskMode="if_whitelisted"` in the manifest, a task is locked automatically whenever the package is in the allowlist, so lock task off also means an empty `setLockTaskPackages`.
 - **Useful user restrictions** for a kiosk: `DISALLOW_FACTORY_RESET`, `DISALLOW_ADD_USER`, `DISALLOW_SYSTEM_ERROR_DIALOGS` (API 28+). Do not add `DISALLOW_ADJUST_VOLUME`; the hearing aids need it. `DISALLOW_SAFE_BOOT` is deliberately not set (see Escape hatches).
 - **Battery optimisation:** not a device-owner API. The app is always in the foreground, so it is moot; if needed, `adb shell dumpsys deviceidle whitelist +net.backslasher.shamash`.
 - **Android versions:** Android 16 is API 36. Pixel 7 gets five years of OS updates from October 2022, so it is current through 2027. `minSdk 33` per the brief, `compileSdk`/`targetSdk 37`.
@@ -93,6 +94,7 @@ Sources: `developer.android.com/work/dpc/dedicated-devices/{lock-task-mode,cookb
 - Transcript text size: keep the 24-64 sp auto-size.
 - Maximum listening duration: 120 s.
 - Power button: the app re-wakes the screen (`ScreenKeeper`, wake lock on `ACTION_SCREEN_OFF`), so the phone never sits dark.
+- Regular app, not lock task (midday): the owner will carry the phone to another house and join its Wi-Fi from the Quick Settings drawer, which Android never shows inside lock task. `ShamashConfig.lockTask = false` keeps the status bar enabled and the lock-task allowlist empty; device owner stays for boot-into-app, stay-awake, no keyguard and the microphone grant. To join a Wi-Fi: swipe down from the top (twice if the bar is hidden), tap the Internet tile, pick the network. Full kiosk is one flag away.
 
 ## Build
 
@@ -247,7 +249,8 @@ Also seen:
 
 - The power button turns the screen off (`Dozing`). The app re-wakes it on `ACTION_SCREEN_OFF` (3 s wake lock, receiver held for the activity's whole lifetime, since a start/stop-scoped one is unregistered before the broadcast arrives). Verified 2026-11-25 09:48 over adb: back to `Awake` within 1 s, twice in a row.
 - A 120 s session on the first build timed out in the final step ("Timed out waiting for the final transcript (20000 ms)"); the batch timeout is now 90 s and the long-session case needs a re-test.
-- A swipe anywhere counts as a tap, which is fine on a stand.
+- A swipe no longer counts as a tap (touch-slop check added 2026-11-25 12:17): with the status bar enabled, the swipe that opens Quick Settings reached the app and started a session. Verified: two swipes from the top opened the drawer with 0 sessions started; a real tap still starts one.
+- Regular-app mode (`ShamashConfig.lockTask = false`, 2026-11-25 12:18, after a reboot): boots into the app, lock task `NONE`, no pinning dialog, Quick Settings drawer with the Internet tile reachable by swiping from the top. Note: switching the flag on a running provisioned phone without a reboot left the task in screen-pinning (`PINNED`, "App is pinned" dialog) because the task had launched allowlisted; `adb shell am task lock stop` or a reboot clears it.
 - The on-device recogniser does not offer Hebrew (`he-IL: supported=[]`), as the brief expected.
 - The start tone is captured in the first ~150 ms of the WAV. Batch now sends `tag_audio_events=false` so it is not labelled; whether it harms recognition of the first word needs a listening test.
 

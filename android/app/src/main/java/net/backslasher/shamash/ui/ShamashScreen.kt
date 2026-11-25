@@ -87,11 +87,15 @@ fun ShamashScreen(
             .drawBehind { drawBackground(model.state, drift.value, pulse.value, sweep.value) }
             .pointerInput(Unit) {
                 awaitEachGesture {
-                    awaitFirstDown()
+                    val first = awaitFirstDown()
                     down()
                     // Maintenance hatch: 3+ fingers held continuously for MAINTENANCE_HOLD_MS.
                     // Such a gesture is never a tap, and its events are consumed once it fires.
                     var multiTouch = false
+                    // A swipe is not a tap either: with the status bar enabled, the swipe that opens
+                    // the Quick Settings drawer also reaches us and must not start a session.
+                    var moved = false
+                    val slop = viewConfiguration.touchSlop
                     var fired = false
                     var holdStart: Long? = null
                     var last: androidx.compose.ui.input.pointer.PointerEvent
@@ -110,12 +114,15 @@ fun ShamashScreen(
                         last = event
                         val pressed = event.changes.count { it.pressed }
                         if (pressed >= 2) multiTouch = true
+                        event.changes.firstOrNull { it.id == first.id }?.let {
+                            if ((it.position - first.position).getDistance() > slop) moved = true
+                        }
                         if (pressed >= 3) { if (holdStart == null) holdStart = System.currentTimeMillis() } else holdStart = null
                         if (fired) event.changes.forEach { it.consume() }
                         if (pressed == 0) break
                     }
                     up()
-                    if (!multiTouch && !last.changes.any { it.isConsumed }) tap()
+                    if (!multiTouch && !moved && !last.changes.any { it.isConsumed }) tap()
                 }
             },
         contentAlignment = Alignment.Center,

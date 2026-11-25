@@ -26,11 +26,14 @@ class KioskPolicyTest {
     }
 
     @Test
-    fun deviceOwnerGetsLockTaskPackage() {
+    fun deviceOwnerGetsLockTaskPackageOnlyWhenLockTaskEnabled() {
         val admin = ComponentName(context, ShamashAdminReceiver::class.java)
         shadowOf(dpm).setDeviceOwner(admin)
         assertTrue(KioskPolicy.isDeviceOwner(context))
-        KioskPolicy.applyIfDeviceOwner(context) // failing steps are logged, never thrown
+        KioskPolicy.applyIfDeviceOwner(context, lockTask = true) // failing steps are logged, never thrown
         assertTrue(dpm.isLockTaskPermitted(context.packageName))
+        // Regular-app mode must empty the allowlist, or lockTaskMode="if_whitelisted" locks anyway.
+        KioskPolicy.applyIfDeviceOwner(context, lockTask = false)
+        assertFalse(dpm.isLockTaskPermitted(context.packageName))
     }
 }

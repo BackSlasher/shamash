@@ -18,6 +18,13 @@ data class ShamashConfig(
     val batchModelId: String = "scribe_v3",
     val realtimeModelId: String = "scribe_v3_live",
     val appVersion: String = "dev",
+    /**
+     * True: full kiosk (lock task, status bar disabled; Quick Settings unreachable, so Wi-Fi can only
+     * change over adb or in maintenance mode). False (owner decision 2026-11-25): regular app that is
+     * still the HOME launcher when device owner, with the status bar and Quick Settings available so
+     * the owner can join a new Wi-Fi anywhere.
+     */
+    val lockTask: Boolean = false,
     /** True for offline testing (-PfakeTranscriber=true): uses FakeTranscriber instead of ElevenLabs. */
     val useFakeTranscriber: Boolean = BuildConfig.FAKE_TRANSCRIBER,
 ) {

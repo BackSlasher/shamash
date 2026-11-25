@@ -13,6 +13,7 @@ import android.os.UserManager
 import android.provider.Settings
 import android.util.Log
 import net.backslasher.shamash.MainActivity
+import net.backslasher.shamash.config.ShamashConfig
 
 private const val TAG = "Shamash"
 
@@ -30,8 +31,11 @@ object KioskPolicy {
         context.getSystemService(ActivityManager::class.java)?.lockTaskModeState !=
             ActivityManager.LOCK_TASK_MODE_NONE
 
-    /** Applies all policies (idempotent; cheap enough to run on every launch). Each step is isolated. */
-    fun applyIfDeviceOwner(context: Context) {
+    /**
+     * Applies all policies (idempotent; cheap enough to run on every launch). Each step is isolated.
+     * [lockTask] false keeps the status bar (and so Quick Settings) usable; see ShamashConfig.lockTask.
+     */
+    fun applyIfDeviceOwner(context: Context, lockTask: Boolean = ShamashConfig.DEFAULT.lockTask) {
         val dpm = dpm(context) ?: return
         val pkg = context.packageName
         if (!dpm.isDeviceOwnerApp(pkg)) {
@@ -40,7 +44,9 @@ object KioskPolicy {
         }
         val admin = ComponentName(context, ShamashAdminReceiver::class.java)
 
-        step("lock task packages") { dpm.setLockTaskPackages(admin, arrayOf(pkg)) }
+        // The manifest's lockTaskMode="if_whitelisted" locks the task automatically whenever the
+        // package is allowlisted, so with lockTask=false the allowlist must be empty.
+        step("lock task packages") { dpm.setLockTaskPackages(admin, if (lockTask) arrayOf(pkg) else emptyArray()) }
         step("lock task features") { dpm.setLockTaskFeatures(admin, DevicePolicyManager.LOCK_TASK_FEATURE_NONE) }
         step("persistent home") {
             val filter = IntentFilter(Intent.ACTION_MAIN).apply {
@@ -56,7 +62,9 @@ object KioskPolicy {
         }
         step("adb enabled") { dpm.setGlobalSetting(admin, Settings.Global.ADB_ENABLED, "1") }
         step("keyguard disabled") { Log.i(TAG, "kiosk: setKeyguardDisabled returned ${dpm.setKeyguardDisabled(admin, true)}") }
-        step("status bar disabled") { Log.i(TAG, "kiosk: setStatusBarDisabled returned ${dpm.setStatusBarDisabled(admin, true)}") }
+        step("status bar disabled=$lockTask") {
+            Log.i(TAG, "kiosk: setStatusBarDisabled($lockTask) returned ${dpm.setStatusBarDisabled(admin, lockTask)}")
+        }
         // DISALLOW_SAFE_BOOT is deliberately not set: safe boot is the recovery path for the POC
         // (owner is present; in safe mode third-party apps including the device owner do not run,
         // so Settings and the adb "Allow USB debugging?" dialog are reachable).
