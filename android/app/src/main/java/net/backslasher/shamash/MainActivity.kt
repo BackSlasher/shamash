@@ -19,6 +19,7 @@ import androidx.core.view.WindowInsetsControllerCompat
 import java.io.File
 import net.backslasher.shamash.kiosk.DeviceInfo
 import net.backslasher.shamash.kiosk.KioskPolicy
+import net.backslasher.shamash.kiosk.ScreenKeeper
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import net.backslasher.shamash.audio.AndroidCues
 import net.backslasher.shamash.core.ErrorKind
@@ -33,6 +34,7 @@ class MainActivity : ComponentActivity() {
     private val viewModel: ShamashViewModel by viewModels()
     private var micGranted by mutableStateOf(false)
     private var maintenance by mutableStateOf(false)
+    private val screenKeeper by lazy { ScreenKeeper(this) }
 
     private val micPermission =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { micGranted = it }
@@ -40,6 +42,8 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         KioskPolicy.applyIfDeviceOwner(this) // before the permission check: it pre-grants the microphone
+        setShowWhenLocked(true)
+        setTurnScreenOn(true)
         enableEdgeToEdge()
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         // Immersive sticky, so an ordinary install looks the same as lock task mode.
@@ -82,6 +86,16 @@ class MainActivity : ComponentActivity() {
                 },
             )
         }
+    }
+
+    override fun onStart() {
+        super.onStart()
+        screenKeeper.start()
+    }
+
+    override fun onStop() {
+        screenKeeper.stop()
+        super.onStop()
     }
 
     override fun onResume() {

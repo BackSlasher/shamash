@@ -87,6 +87,13 @@ Sources: `developer.android.com/work/dpc/dedicated-devices/{lock-task-mode,cookb
 - Maximum listening duration is configurable (default 120 s), not hard-coded.
 - Releases go out as a signed APK on GitHub Releases for Obtainium.
 
+### Owner decisions (2026-11-25)
+
+- Trigger mode: tap to toggle.
+- Transcript text size: keep the 24-64 sp auto-size.
+- Maximum listening duration: 120 s.
+- Power button: the app re-wakes the screen (`ScreenKeeper`, wake lock on `ACTION_SCREEN_OFF`), so the phone never sits dark.
+
 ## Build
 
 Prerequisite: `podman` only. The JDK, Android SDK and Gradle live in the build image.
@@ -238,7 +245,7 @@ Status as of 2026-11-25 09:30, Pixel 7 Pro, Android 16 (API 36), debug build, de
 
 Also seen:
 
-- The power button still turns the screen off (`Dozing`); it wakes straight back into the app, with no lock screen. A dock that covers the button, or a wake lock on screen-off, would avoid it.
+- The power button turns the screen off (`Dozing`); it wakes straight back into the app, with no lock screen. The app now re-wakes the screen on `ACTION_SCREEN_OFF` (3 s wake lock); verification on the device pending.
 - A 120 s session on the first build timed out in the final step ("Timed out waiting for the final transcript (20000 ms)"); the batch timeout is now 90 s and the long-session case needs a re-test.
 - A swipe anywhere counts as a tap, which is fine on a stand.
 - The on-device recogniser does not offer Hebrew (`he-IL: supported=[]`), as the brief expected.
@@ -273,7 +280,4 @@ Findings:
 
 ### Open questions for the owner
 
-- Tap-to-toggle or press-and-hold?
-- Text size on the real device.
-- Maximum listening duration (default 120 s).
-- Power button: accept that it blanks the screen until the next press, cover it with the dock, or have the app re-wake the screen?
+All four were answered on 2026-11-25 (see owner decisions).
