@@ -222,17 +222,19 @@ The script refuses to run when `jj diff` shows uncommitted changes. `SHAMASH_VER
 
 Maps to brief section 7 "Done means".
 
-Status as of 2026-11-25 01:00, Pixel 7 Pro, Android 16 (API 36), debug build, device owner set, phone on the guest Wi-Fi:
+Status as of 2026-11-25 09:30, Pixel 7 Pro, Android 16 (API 36), debug build, device owner set, phone on the owner's main Wi-Fi (after a factory reset and re-provisioning that morning):
 
-- [ ] 1. After `adb reboot` the phone shows the Idle button with no user action. *Rebooted; could not verify because adb came back `unauthorized` (see provisioning step 4).*
+- [x] 1. After `adb reboot` the phone shows the Idle button with no user action. Verified 09:20: app in front, lock task `LOCKED`, awake, Wi-Fi joined, adb still authorised.
 - [x] 2. Tap: red pulsing screen; realtime session ready 330 ms after the tap. *Spoken Hebrew not yet tested on the device; only ambient sound.*
 - [x] 3. Tap again: amber, then the final transcript, then Idle. Final text 1.2 s after the stop tap for a 7 s clip.
 - [x] 4. WAV (16 kHz mono 16-bit, correct duration) and JSON per session; `adb pull` works.
 - [x] 5. No network, tap: grey Error ("אין חיבור") within 13 ms, nothing recorded.
-- [x] 6. Home, Back, Recents, swipe from top, swipe from bottom: focus stays in the app, lock task state `LOCKED`. *`remove-active-admin` not yet exercised.*
+- [x] 6. Home, Back, Recents, swipe from top, swipe from bottom: focus stays in the app, lock task state `LOCKED`. `remove-active-admin` exercised 09:24: lock task went to `NONE`; `set-device-owner` again plus a reinstall brought it back to `LOCKED`.
 - [x] 7. `.env` and `local.properties` are untracked; the key is only in `BuildConfig`.
-- [ ] 8. Provisioning steps worked up to the reboot; README updated with what was learned.
+- [x] 8. Provisioning steps worked end to end on the second attempt; README updated with what was learned.
 - [x] 2026-11-25: after a reboot the lock task blocked the USB-debugging dialog, adb stayed `unauthorized` and a factory reset was needed. This is why the escape hatches exist (three-finger hold, safe boot allowed).
+- [x] Three-finger hold verified by the owner at 09:17 from inside the kiosk: lock task `LOCKED` → `NONE`, label shown, app stayed in front. (Once, the label also appeared at the top of the screen as well as the bottom; not reproduced.)
+- [x] Long sessions on the current build, silent room, driven by `adb shell input tap`: 30 s session had its periodic commit at 25.8 s, final commit answered in 188 ms, batch 7.6 s; the 120 s session auto-stopped at 120.0 s after four periodic commits, batch 3.4 s, stop-to-final 3.6 s. Both WAVs the right length, transcripts empty (silence).
 
 Also seen:
 
@@ -248,8 +250,26 @@ Still to check with a person present:
 - [ ] Start and stop tones play from the bottom speaker, at a usable volume.
 - [ ] Haptic feedback present or absent (note which).
 - [ ] Hebrew text size and legibility from the stand; mixed Hebrew/English order.
-- [ ] A session longer than 25 s (periodic commit) and the full 120 s auto-stop, on the current build.
-- [ ] `adb shell dpm remove-active-admin ...` then re-provision.
+- [x] A session longer than 25 s (periodic commit) and the full 120 s auto-stop, on the current build (silent room; see above).
+- [x] `adb shell dpm remove-active-admin ...` then re-provision.
+
+## PC-link spike (2026-11-25)
+
+Beyond the POC: a measurement of the future phone → PC audio path, using `tools/pclink/` (podman WebSocket server) and the debug-only probe in the app (`tools/pclink/README.md`). Each probe streams real microphone audio as 100 ms PCM frames; the server acks every frame and writes a WAV.
+
+| Path | Frames / acks | Gaps | RTT ms min / median / max / p95 | Server inter-arrival ms min / median / max |
+|---|---|---|---|---|
+| USB (`adb reverse`), 10 s | 100 / 100 | 0 | 8 / 12 / 15 / 14 | 93 / 100 / 107 |
+| Main Wi-Fi, 10 s | 100 / 100 | 0 | 11 / 17 / 72 / 24 | 57 / 100 / 154 |
+| Main Wi-Fi, 30 s | 299 / 299 | 0 | 10 / 17 / 275 / 28 | (not captured) |
+
+Findings:
+
+- The owner's guest Wi-Fi isolates clients from the LAN: the phone could ping its gateway but every connection to the PC was refused (no firewall on the PC). The phone is now on the main Wi-Fi, which works. The real system needs the phone on the main network, or USB.
+- USB through `adb reverse` is a usable transport and would suit a cabled dock: lowest and steadiest latency, no Wi-Fi power-save spikes.
+- Wi-Fi is fine for 100 ms frames (no gaps, median 17 ms) but has occasional spikes of 70–275 ms, consistent with the 50–130 ms ping times seen from the phone.
+- Plain `ws://` is blocked by Android's default network security policy. Debug builds now carry `src/debug/res/xml/network_security_config.xml` allowing cleartext; release builds do not, so the real link must be `wss://` (or a VPN/pinned TLS, as the brief's end state already says).
+- The received WAVs are correct 16 kHz mono files of the right length.
 
 ### Open questions for the owner
 
