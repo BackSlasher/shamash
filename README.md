@@ -245,7 +245,7 @@ Status as of 2026-11-25 09:30, Pixel 7 Pro, Android 16 (API 36), debug build, de
 
 Also seen:
 
-- The power button turns the screen off (`Dozing`); it wakes straight back into the app, with no lock screen. The app now re-wakes the screen on `ACTION_SCREEN_OFF` (3 s wake lock); verification on the device pending.
+- The power button turns the screen off (`Dozing`). The app re-wakes it on `ACTION_SCREEN_OFF` (3 s wake lock, receiver held for the activity's whole lifetime, since a start/stop-scoped one is unregistered before the broadcast arrives). Verified 2026-11-25 09:48 over adb: back to `Awake` within 1 s, twice in a row.
 - A 120 s session on the first build timed out in the final step ("Timed out waiting for the final transcript (20000 ms)"); the batch timeout is now 90 s and the long-session case needs a re-test.
 - A swipe anywhere counts as a tap, which is fine on a stand.
 - The on-device recogniser does not offer Hebrew (`he-IL: supported=[]`), as the brief expected.

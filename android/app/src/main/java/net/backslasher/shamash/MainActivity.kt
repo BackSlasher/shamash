@@ -34,7 +34,9 @@ class MainActivity : ComponentActivity() {
     private val viewModel: ShamashViewModel by viewModels()
     private var micGranted by mutableStateOf(false)
     private var maintenance by mutableStateOf(false)
-    private val screenKeeper by lazy { ScreenKeeper(this) }
+    // Application context and create/destroy lifetime: the screen-off broadcast arrives after the
+    // activity has already been stopped, so a start/stop-scoped receiver never sees it.
+    private val screenKeeper by lazy { ScreenKeeper(applicationContext) }
 
     private val micPermission =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { micGranted = it }
@@ -44,6 +46,7 @@ class MainActivity : ComponentActivity() {
         KioskPolicy.applyIfDeviceOwner(this) // before the permission check: it pre-grants the microphone
         setShowWhenLocked(true)
         setTurnScreenOn(true)
+        screenKeeper.start()
         enableEdgeToEdge()
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         // Immersive sticky, so an ordinary install looks the same as lock task mode.
@@ -88,14 +91,9 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    override fun onStart() {
-        super.onStart()
-        screenKeeper.start()
-    }
-
-    override fun onStop() {
+    override fun onDestroy() {
         screenKeeper.stop()
-        super.onStop()
+        super.onDestroy()
     }
 
     override fun onResume() {
