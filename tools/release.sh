@@ -7,6 +7,14 @@
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
+# Like build.sh: the signing variables live in <repo>/.env (git-ignored, never printed).
+if [ -f .env ]; then
+  set -a
+  # shellcheck disable=SC1091
+  . ./.env
+  set +a
+fi
+
 for v in SHAMASH_KEYSTORE_FILE SHAMASH_KEYSTORE_PASSWORD SHAMASH_KEY_ALIAS SHAMASH_KEY_PASSWORD \
          SHAMASH_VERSION_NAME SHAMASH_VERSION_CODE; do
   [ -n "${!v:-}" ] || { echo "missing env var $v" >&2; exit 1; }
