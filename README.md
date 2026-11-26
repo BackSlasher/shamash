@@ -254,6 +254,9 @@ Published so far:
 |---|---|---|---|
 | v0.1.0 (2026-11-25) | 1 | `shamash-0.1.0.apk`, 1.7 MB, R8-minified | First signed release. Built and signature-verified, not yet run on the phone. Also carries the PC scaffold (`Shamash.Pc-win-Setup.exe` and Velopack assets, see `pc/README.md`). |
 | v0.1.1, v0.1.2, v0.1.3 (2026-11-25) | 2, 3, 4 | same APK code | Cut to exercise the PC self-update in the Windows test VM (`pc/README.md`, "Verified on Windows 11"). No phone-side change. |
+| v0.1.4 (2026-11-26) | 5 | same APK code | PC side gains the phone-link server. Verified end to end: phone probe over Wi-Fi into the self-updated Windows VM. |
+
+Obtainium verified 2026-11-26 on the Pixel 7 Pro: with the release build v0.1.2 installed over adb (device owner removed first, so the switch stayed reversible), Obtainium 1.7.5 was added via `am start -a android.intent.action.VIEW -d 'obtainium://add/https://github.com/BackSlasher/shamash'`, showed "0.1.2 Installed, v0.1.3 Latest" with the right certificate hash, and after the "Install unknown apps" grant and two taps installed v0.1.3 (`installerPackageName=dev.imranr.obtainium`). The mic grant survived the update. The R8-minified release build starts and runs as an ordinary app. The phone was then put back on the debug build (it carries the link-probe receiver) and is **not** device owner at the moment; Obtainium is still installed and tracking the repo.
 
 One release carries both halves. Order matters: `tools/release.sh --publish` first (it uses `gh release create`, which refuses an existing tag), then `SHAMASH_VERSION_NAME=<same> pc/build.sh publish pack upload`, whose `vpk upload --merge` adds the Windows assets to that release.
 

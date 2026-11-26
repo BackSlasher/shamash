@@ -118,9 +118,15 @@ Verified on Linux in podman only: the in-process integration test (`ClientWebSoc
 - Fully unattended path: with 0.1.2 running under `SHAMASH_UPDATE_NOW=1` and `SHAMASH_UPDATE_CHECK_MINUTES=1`, v0.1.3 was published and nothing touched the VM. The log shows "Update available: 0.1.3" at 15:07:48, downloaded at :50, "Applying update 0.1.3 and restarting", and the new process heartbeating as 0.1.3 at 15:07:55, 7 s after detection. The scheduled task stays Ready throughout because Update.exe relaunches the app outside the task.
 - The log file is `%LocalAppData%\Shamash\logs\shamash-<yyyyMMdd>.log`.
 
+## Verified end to end with the phone (2026-11-26)
+
+- v0.1.4 (the first build with the link server) was published while the VM app ran 0.1.3 with `SHAMASH_UPDATE_NOW=1` and one-minute checks: "Applying update 0.1.4 and restarting" at 09:55:55, "link: listening on http://0.0.0.0:8777" from the 0.1.4 process at 09:56:01. The inbound port rule had been added beforehand with the PowerShell line below (Private profile, which is what the VM's network is). Kestrel bound 0.0.0.0:8777 as the normal user with no URL ACL.
+- The Pixel 7 Pro (debug build, on the same Wi-Fi) ran the probe against the VM through the host's published port: 100 frames, 100 acks, RTT min/median/max/p95 10/19/137/35 ms, no gaps. The VM logged the hello with the phone's real LAN address and wrote `pclink-20261126-095707.wav`, 10.00 s of 16 kHz mono, which held real room audio (nobody spoke; RMS 86, peak 525).
+
 ## Not verified
 
 - Uninstall, shortcuts, and SmartScreen on a browser-downloaded Setup.exe (the VM copy came over the shared folder).
+- The firewall prompt itself: the rule was added before the service first listened.
 - Why the delta package is not used: Velopack downloaded the full package both times.
 - Release assets are unsigned; Windows SmartScreen may warn on first run.
 - vpk warns that `VelopackApp.Run()` "does not look like your application's entry point" because of top-level async `Main`. It is the first statement; whether this matters on Windows is unverified.

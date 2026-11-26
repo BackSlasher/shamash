@@ -28,6 +28,8 @@ Disk image and state: `~/vm/shamash-win11/` (`SHAMASH_WINVM_DIR` overrides). `sh
   guest by default; SSH needs `USER_PORTS=22` (now in `run.sh`). Without it the host port accepts
   the connection and the guest resets it, which looks like a hung install.
 - On btrfs, `chattr +C` the storage directory before the first run (dockur warns about CoW).
+- LAN access to a guest port: publish it on `0.0.0.0` and list it in `USER_PORTS` (8777 for the phone link, in `run.sh`). The host listener is pasta's. A phone probe sent before the guest service was listening hit a connect timeout rather than a refusal; once the service listened, connections from the phone succeeded. Changing `-p`/`USER_PORTS` needs a container restart, which reboots Windows (about a minute, autologin brings the logon task back).
+- Inside Windows, open the port once: `New-NetFirewallRule -DisplayName "Shamash link 8777" -Direction Inbound -Protocol TCP -LocalPort 8777 -Action Allow -Profile Any` over SSH (the SSH session is elevated).
 - The QEMU monitor socket at `/run/shm/monitor.sock` in the container accepts `sendkey` and
   `screendump`, which is enough to drive the desktop without the web viewer, including the Run
   dialog and UAC prompts.
