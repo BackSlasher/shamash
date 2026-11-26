@@ -8,6 +8,7 @@ A .NET 10 Generic Host worker for the Windows PC. Currently a placeholder that p
   - `UpdateService` - on startup and every 6 hours checks `https://github.com/BackSlasher/shamash` (GitHub Releases, stable only) via Velopack. If an update exists it is downloaded, then applied with `ApplyUpdatesAndRestart` only inside the update window. If `UpdateManager.IsInstalled` is false it logs "not installed via Velopack, skipping updates" and does nothing.
   - `UpdateWindow` - pure static-style parsing/containment logic (unit tested).
   - `HeartbeatService` - logs the assembly informational version once a minute.
+  - `LinkServer` / `LinkHostedService` - phone link probe server (see below); `LinkFrame`, `LinkSessionStats`, `WavWriter` are the pure parts.
 - `Shamash.Pc.Tests/` - xunit tests for `UpdateWindow` (same-day window, window crossing midnight, empty window, malformed input falls back to the 03:00-05:00 default).
 - `build.sh` - runs everything in podman (`mcr.microsoft.com/dotnet/sdk:10.0`), caches in volume `shamash-dotnet-cache` (NuGet packages in `/cache/nuget`, `vpk` in `/cache/tools`).
 
@@ -55,6 +56,44 @@ The `vpk` version (`vpk_version` in `build.sh`) must equal the `Velopack` packag
 | `SHAMASH_UPDATE_WINDOW` | runtime | `HH:mm-HH:mm` local time, default `03:00-05:00`; may cross midnight; malformed falls back to default |
 | `SHAMASH_UPDATE_NOW` | runtime | `1` applies a downloaded update immediately |
 | `SHAMASH_UPDATE_CHECK_MINUTES` | runtime | minutes between update checks, default 360, minimum 1 |
+| `SHAMASH_LINK_PORT` | runtime | phone link probe port, default 8777 |
+
+## Phone link probe
+
+Port of `tools/pclink/server.py`: Kestrel (ASP.NET Core, framework reference, no extra packages) runs inside the Generic Host and serves a WebSocket at `ws://<host>:8777/` (plain ws for now). Port from `SHAMASH_LINK_PORT`. If the port cannot be bound it logs "link: failed to start" and the rest of the service keeps running.
+
+Protocol:
+
+- Text `{"type":"hello","sampleRate":16000,"seconds":N,"device":"..."}` first; text `{"type":"end"}` when the phone is done.
+- Binary frames: 4-byte big-endian uint32 seq, 8-byte big-endian int64 phone send time (ms), then raw 16-bit mono PCM (3200 bytes = 100 ms at 16 kHz). Frames under 12 bytes are ignored. Messages over 1 MB close the socket.
+- Every frame is answered with `{"type":"ack","seq":S,"tPhone":T,"tServerMs":<unix ms>}`.
+- On `end` or close: `{"type":"summary","frames":N,"bytes":N,"seconds":<3 decimals>,"gaps":<missing seq count>}`, then the server closes.
+
+The PCM is written to `%LocalAppData%\Shamash\pclink\pclink-yyyyMMdd-HHmmss.wav` (`.\pclink` if LocalAppData is unavailable), mono 16-bit at the hello's sample rate. Log lines (Information):
+
+```
+link: listening on http://0.0.0.0:8777
+link: hello from <ip:port>: {"type":"hello",...}
+link: peer=<ip:port> frames=N bytes=N audio=S.SSs wall=S.SSs gaps=N interarrival_ms(min/med/max)=a/b/c
+```
+
+Test from the Android debug build (one quoted string, because adb joins its arguments with spaces):
+
+```
+adb shell "am broadcast -a net.backslasher.shamash.PCLINK_PROBE -p net.backslasher.shamash --es url ws://<pc-ip>:8777/ --ei seconds 10"
+```
+
+### Windows Firewall
+
+The first time `Shamash.Pc.exe` listens, Windows Defender Firewall may show an allow prompt, or (on a Public network profile, or when no one can answer the prompt) silently block inbound connections. Allow it from an elevated PowerShell:
+
+```
+New-NetFirewallRule -DisplayName "Shamash link" -Direction Inbound -Protocol TCP -LocalPort 8777 -Action Allow -Profile Private
+```
+
+or per program: `New-NetFirewallRule -DisplayName "Shamash link" -Direction Inbound -Program "$env:LocalAppData\Shamash.Pc\current\Shamash.Pc.exe" -Action Allow` (the path changes per Velopack version folder only if you use `current\`; unverified whether the rule survives updates, so the port rule is safer). Drop `-Profile Private` to include Public networks. Kestrel binding `0.0.0.0` on a non-reserved port as a normal user needs no URL ACL (that is a http.sys/HttpListener requirement); this is Kestrel's own socket, but it has not been tried on the Windows VM yet (unverified). Not verified either: the firewall prompt behaviour itself.
+
+Verified on Linux in podman only: the in-process integration test (`ClientWebSocket`: hello, 3 frames, end; 3 acks, summary frames=3 bytes=9600 gaps=0, WAV written). A trimming/single-file `publish` for win-x64 succeeds and `Shamash.Pc.exe` grew to about 104 MB; it also leaves `aspnetcorev2_inprocess.dll` (IIS module, unused) beside the exe.
 
 ## Update flow
 

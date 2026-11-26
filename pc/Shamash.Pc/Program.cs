@@ -25,6 +25,7 @@ try
     builder.Services.AddSerilog();
     builder.Services.AddHostedService<UpdateService>();
     builder.Services.AddHostedService<HeartbeatService>();
+    builder.Services.AddHostedService<LinkHostedService>();
     await builder.Build().RunAsync();
 }
 finally

@@ -23,7 +23,7 @@ cp "$key.pub" "$vm_dir/oem/administrators_authorized_keys"
 exec podman run -d --replace --name shamash-win11 \
   --device /dev/kvm --device /dev/net/tun --cap-add NET_ADMIN \
   -e VERSION=11 -e RAM_SIZE=8G -e CPU_CORES=4 -e DISK_SIZE=64G \
-  -e USERNAME=shamash -e PASSWORD=shamash -e LOG=Y -e USER_PORTS=22 \
-  -p 127.0.0.1:8006:8006 -p 127.0.0.1:3389:3389 -p 127.0.0.1:2222:22 \
+  -e USERNAME=shamash -e PASSWORD=shamash -e LOG=Y -e USER_PORTS=22,8777 \
+  -p 127.0.0.1:8006:8006 -p 127.0.0.1:3389:3389 -p 127.0.0.1:2222:22 -p 0.0.0.0:8777:8777 \
   -v "$vm_dir/storage:/storage:Z" -v "$vm_dir/shared:/shared:Z" -v "$vm_dir/oem:/oem:Z" \
   --stop-timeout 120 ghcr.io/dockur/windows:latest
