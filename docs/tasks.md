@@ -40,7 +40,7 @@ Done when: <observable check>
 
 ## Tasks
 
-### Find a document by what it is about                 status: idea
+### Find a document by what it is about                 status: specified
 Ask: "תמצא בבקשה את המאמר על ירושלים בתקופה העות'מאנית"
 What should happen: search his document folders by content (not just file name), rank, open the best match in Word, say what was found and where.
 Touches: document folders (see environment), Word.
@@ -49,6 +49,7 @@ Spoken result: "מצאתי את X בתיקייה Y ופתחתי אותו" or "ל
 Confirmation needed: none.
 Seed data for the VM: ~50 .docx/.pdf in nested folders, a few on the same subject, Hebrew and English, some duplicates with different names.
 Done when: the right file opens on screen.
+Owner notes (2026-11-27): agreed. Tooling = a document text reader plus the Windows Search index (OS-maintained, never stale; query via the Search.CollatorDSO OLE DB provider), with a slow folder walk as fallback for unindexed locations. Claude keeps no index of its own. Verify on his PC: PDF content indexing and which folders are indexed.
 
 ### Translate a document                                status: idea
 Ask: "תעביר את המאמר הזה לאנגלית"
@@ -59,6 +60,7 @@ Spoken result: "תרגמתי ושמרתי בשם X, זה פתוח עכשיו".
 Confirmation needed: none.
 Seed data for the VM: a few Hebrew and English articles with headings, footnotes, tables.
 Done when: a new .docx exists with the translation and formatting kept.
+Owner notes (2026-11-27): no cloud-side Office exists; do it locally without Word: read the .docx with OpenXML, translate paragraphs with Claude, write back into the same structure (styles, headings, tables, lists), save as a new file, open it in Word. Flip paragraph direction for Hebrew<->English. PDFs come out as a translated .docx. Complex layouts are the hard part; v1 = paragraphs, headings, tables, lists.
 
 ### Organise and deduplicate a folder                   status: idea
 Ask: "תסדר לי את התיקייה של המאמרים"
@@ -69,6 +71,7 @@ Spoken result: a short summary of what was moved.
 Confirmation needed: before acting.
 Seed data for the VM: the folder above with exact copies, older versions, "Copy of" files.
 Done when: no file lost (count before = count after), duplicates grouped.
+Owner notes (2026-11-27): describing a rearrangement by voice is not realistic. Design: he triggers, the agent proposes a plan (spoken 3-sentence summary + plain list on the PC screen), he approves, moves only, never deletes, with a move journal for undo. First slice: deduplication alone.
 
 ### Help with email                                     status: idea
 Ask: "יש לי מייל חדש?", "תקרא לי את המייל מדני", "תענה לו שאני מסכים"
@@ -79,6 +82,7 @@ Spoken result: the draft read back, then "לשלוח?".
 Confirmation needed: before sending.
 Seed data for the VM: a test mailbox with a handful of Hebrew and English threads.
 Done when: a reply arrives at a test address.
+Owner notes (2026-11-27): interesting but low priority (Outlook COM is high complexity). If his mail is Gmail/IMAP the PC can read and send directly without Outlook; only Outlook desktop on Exchange needs COM or Graph. Decide after the environment table is filled.
 
 <!-- Add tasks below. Printing, calendar, reading a PDF aloud, summarising a long document, dictating a letter, renaming files, finding a photo... -->
 
