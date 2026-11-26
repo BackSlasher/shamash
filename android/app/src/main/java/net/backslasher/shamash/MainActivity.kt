@@ -3,6 +3,7 @@ package net.backslasher.shamash
 import android.Manifest
 import android.content.pm.PackageManager
 import android.os.Bundle
+import android.util.Log
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
@@ -41,6 +42,24 @@ class MainActivity : ComponentActivity() {
 
     private val micPermission =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { micGranted = it }
+
+    /** Sets the media stream to `ShamashConfig.mediaVolume` (fraction of max); the volume keys then adjust that stream. */
+    private fun applyMediaVolume() {
+        val fraction = ShamashConfig.DEFAULT.mediaVolume ?: return
+        volumeControlStream = android.media.AudioManager.STREAM_MUSIC
+        val am = getSystemService(android.media.AudioManager::class.java) ?: return
+        val stream = android.media.AudioManager.STREAM_MUSIC
+        val max = am.getStreamMaxVolume(stream)
+        val target = (max * fraction).toInt().coerceIn(0, max)
+        val current = am.getStreamVolume(stream)
+        if (current == target) return
+        try {
+            am.setStreamVolume(stream, target, 0)
+            Log.i("Shamash", "volume: media $current -> $target of $max")
+        } catch (e: Exception) {
+            Log.w("Shamash", "volume: could not set media volume: ${e.message}")
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -102,6 +121,7 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         micGranted = hasMic()
+        applyMediaVolume()
         if (ShamashConfig.DEFAULT.lockTask && !maintenanceUnlocked) KioskPolicy.enterLockTaskIfPossible(this)
     }
 

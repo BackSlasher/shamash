@@ -346,6 +346,12 @@ What the recordings show:
 
 Open UX decision: auto-stop after N seconds of silence (behind a config value) so a forgotten second tap still ends the session, versus waiting for the PC side's spoken reply to make turn-taking obvious.
 
+## PC side
+
+- `pc/` is the Windows service (`pc/README.md`): link server, speech-to-text, Claude, text-to-speech, self-update.
+- `docs/link-protocol.md` is the phone-to-PC contract; `docs/tasks.md` is the owner-maintained list of what the agent must be able to do on the computer (fill in the environment table first: Windows and Office editions, email client, where documents live).
+- `tools/winvm/` runs a Windows 11 test VM; `tools/winvm/snapshot.sh` saves and restores whole-VM snapshots so a test can always start from the clean `win11-base` image and install Shamash fresh.
+
 ## PC-link spike (2026-11-25)
 
 Beyond the POC: a measurement of the future phone → PC audio path, using `tools/pclink/` (podman WebSocket server) and the debug-only probe in the app (`tools/pclink/README.md`). Each probe streams real microphone audio as 100 ms PCM frames; the server acks every frame and writes a WAV.

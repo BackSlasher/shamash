@@ -36,4 +36,36 @@ Disk image and state: `~/vm/shamash-win11/` (`SHAMASH_WINVM_DIR` overrides). `sh
 - Over SSH the session is a normal user session: Velopack's `Setup.exe --silent` installed to
   `%LocalAppData%\Shamash.Pc` with exit code 0 and no prompt. A logon scheduled task with no
   execution time limit starts the stub `Shamash.Pc.exe`, which spawns `current\Shamash.Pc.exe`
-  and exits, so the task reports Ready while the app runs.
+  and exits, so the task reports Ready while the app runs. Since 0.1.7 the installer creates that
+  task itself (`pc/Shamash.Pc/StartupTask.cs`) and the uninstaller removes it.
+
+## Snapshots (`snapshot.sh`)
+
+The test loop is: restore a known snapshot, install Shamash from a release or a local pack, test,
+throw the result away.
+
+```
+tools/winvm/snapshot.sh save <name>      # clean Windows shutdown, copy storage/, start the VM again
+tools/winvm/snapshot.sh restore <name>   # shutdown, replace storage/ with the snapshot, start
+tools/winvm/snapshot.sh list
+tools/winvm/snapshot.sh delete <name>
+```
+
+Snapshots live in `$SHAMASH_WINVM_DIR/snapshots/<name>/` and are made with `cp --reflink=auto`, so on
+btrfs they take seconds and no space until blocks diverge (the storage directory is `chattr +C`, which
+does not prevent reflinks). After a restore allow about a minute before `ssh.sh` answers. Verified
+2026-11-26: a marker file written before `restore win11-base` was gone afterwards; the restored VM
+booted and answered SSH in under a minute.
+
+Existing snapshots:
+
+- `win11-base` (2026-11-26 23:39): Windows 11 with OpenSSH, the `shamash` account, Israel time zone, the
+  8777 firewall rule, no Shamash, no secrets (the `%LocalAppData%\Shamash` config and logs were removed
+  before saving; keep it that way, snapshots must never hold `config.json`).
+
+Office is not installed. Research 2026-11-26: Microsoft 365 Apps installed without a license run in
+reduced functionality mode (view and print only, sign-in prompt at every launch), with no documented
+grace period, so an unlicensed install is of little use for automation tests; the 30-day Microsoft 365
+trials need a Microsoft account and most need a card. Decision pending: the owner is checking which
+Office edition the actual user has; the test VM should get the same edition (a Microsoft 365
+subscription can be signed in on up to five PCs, which could include this VM).

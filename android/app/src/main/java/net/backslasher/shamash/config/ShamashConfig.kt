@@ -41,6 +41,12 @@ data class ShamashConfig(
     val pcLinkUrl: String? = BuildConfig.PC_LINK_URL.takeIf { it.isNotBlank() },
     /** Link mode: budget for the whole reply (text plus audio playback) after the transcript. */
     val linkReplyTimeoutMs: Long = 60_000L,
+    /**
+     * Media (STREAM_MUSIC) volume the app sets whenever it comes to the foreground, as a fraction of
+     * the maximum; null leaves the phone's setting alone. 1.0 because the speaker is quiet and the
+     * owner found the spoken reply too soft (2026-11-26). The phone's volume keys adjust this stream.
+     */
+    val mediaVolume: Float? = 1.0f,
 ) {
     companion object {
         val DEFAULT = ShamashConfig(appVersion = BuildConfig.VERSION_NAME)

@@ -132,7 +132,7 @@ Each turn's audio is written to `%LocalAppData%\Shamash\pclink\pclink-yyyyMMdd-H
 
 ## Update flow
 
-1. `Shamash.Pc-win-Setup.exe` is a one-click, per-user installer: it installs under `%LocalAppData%\Shamash.Pc` without admin rights or prompts and creates Desktop and Start Menu shortcuts.
+1. `Shamash.Pc-win-Setup.exe` is a one-click, per-user installer: it installs under `%LocalAppData%\Shamash.Pc` without admin rights or prompts and creates Desktop and Start Menu shortcuts. Since 0.1.7 the Velopack after-install hook (`StartupTask.cs`) also registers a logon scheduled task "Shamash.Pc" for the installing user (no execution time limit, least privilege, runs the stub from the install root) and starts it; the before-uninstall hook deletes the task. Hooks log to `%LocalAppData%\Shamash\logs\install.log`. The app holds a per-user named mutex, so a second start (installer plus task, or a task start during an update restart) exits at once.
 2. The installed app checks GitHub Releases at startup and every 6 hours. A found update is downloaded in the background.
 3. Once inside the update window the app calls `ApplyUpdatesAndRestart`. Velopack keeps the previous version in its own folder and switches the `current` folder to the new one.
 4. Releasing: bump `SHAMASH_VERSION_NAME` (same value as the APK release), run the phone `tools/release.sh --publish`, then `pc/build.sh publish`, `pack`, `upload`. Each version needs a new, higher version number.
@@ -172,10 +172,15 @@ Each turn's audio is written to `%LocalAppData%\Shamash\pclink\pclink-yyyyMMdd-H
 - The same sentence sent again as a second turn: the reply started with "sorry, maybe I was not clear" and narrowed the question (is it the user's own article saved on this computer), so the per-process history reaches the model. STT 988 ms, Claude 2340 ms, TTS first byte 191 ms, `done` at 4475 ms.
 - Nothing from the key, the prompt or the reply is logged; only lengths and timings.
 
+## Verified: installer registers the logon task, uninstall removes it (2026-11-26 23:44, local 0.1.7 pack)
+
+- The VM was restored to the `win11-base` snapshot (`tools/winvm/snapshot.sh`, no Shamash on it), then `Setup.exe --silent` from the shared folder: exit 0; `install.log` shows `after-install 0.1.7`, `schtasks /Create` SUCCESS, `/Run` SUCCESS; `Get-ScheduledTask` reports Ready, `ExecutionTimeLimit PT0S`, a logon trigger; exactly one `current\Shamash.Pc.exe` process; the service logged "No update available" 7 s after the installer returned.
+- `Update.exe --uninstall --silent`: exit 0, `before-uninstall 0.1.7`, `schtasks /Delete` SUCCESS, task gone. Velopack leaves `Update.exe` itself and `%LocalAppData%\Shamash` (config and logs) behind; the data folder is intentional so a reinstall keeps its config.
+
 ## Not verified
 
 - A spoken turn from the phone (someone talking into it) and the phone playing the reply audio through its speaker; only a silent turn ran from the phone.
-- Uninstall, shortcuts, and SmartScreen on a browser-downloaded Setup.exe (the VM copy came over the shared folder).
+- Shortcuts, and SmartScreen on a browser-downloaded Setup.exe (the VM copy came over the shared folder).
 - The firewall prompt itself: the rule was added before the service first listened.
 - Why the delta package is not used: Velopack downloaded the full package every time, though vpk builds 7 KB deltas.
 - Release assets are unsigned; Windows SmartScreen may warn on first run.
