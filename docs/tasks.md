@@ -42,7 +42,8 @@ Done when: <observable check>
 
 ### Find a document by what it is about                 status: specified
 Ask: "תמצא בבקשה את המאמר על ירושלים בתקופה העות'מאנית"
-What should happen: search his document folders by content (not just file name), rank, open the best match in Word, say what was found and where.
+Also phrased as: "תפתח את הקובץ שנקרא מכתב לעירייה", "המסמך שעבדתי עליו אתמול", "הקובץ שבשולחן העבודה"
+What should happen: search his document folders by content (not just file name), rank, open the best match in Word, say what was found and where. The Windows Search query covers name, content, folder and modified date; the document reader is used to confirm candidates.
 Touches: document folders (see environment), Word.
 Must never: move or modify the file.
 Spoken result: "מצאתי את X בתיקייה Y ופתחתי אותו" or "לא מצאתי, אולי תזכור מילה מהכותרת?".
@@ -84,13 +85,75 @@ Seed data for the VM: a test mailbox with a handful of Hebrew and English thread
 Done when: a reply arrives at a test address.
 Owner notes (2026-11-27): interesting but low priority (Outlook COM is high complexity). If his mail is Gmail/IMAP the PC can read and send directly without Outlook; only Outlook desktop on Exchange needs COM or Graph. Decide after the environment table is filled.
 
+### Show a file in Explorer                             status: specified
+Ask: "תראה לי איפה הקובץ הזה נמצא", "תפתח לי את התיקייה של הקובץ"
+Also phrased as: "באיזו תיקייה זה?"
+What should happen: run `explorer.exe /select,"<full path>"`, which opens a new Explorer window at the folder with the file selected; say which folder it is in.
+Touches: Explorer only.
+Must never: modify the file.
+Spoken result: "פתחתי את התיקייה Y, הקובץ מסומן".
+Confirmation needed: none.
+Seed data for the VM: any file.
+Done when: an Explorer window with the file selected is in front.
+
+### Open a file in its program                          status: specified
+Ask: "תפתח את הקובץ הזה", "תפתח אותו בוורד"
+Also phrased as: "תפתח לי את המכתב"
+What should happen: ShellExecute with the default verb (the file's registered app: Word for .docx, the PDF viewer for .pdf), then confirm aloud. If the file is already open, focus it instead (see "Bring a document to the front").
+Touches: the default app for the type.
+Must never: pick an app other than the default without asking.
+Spoken result: "פתחתי את X".
+Confirmation needed: none.
+Seed data for the VM: a .docx, a .pdf, an .xlsx.
+Done when: the document is open and in front.
+
+### Is a document open?                                 status: specified
+Ask: "המכתב לעירייה פתוח עכשיו?"
+Also phrased as: "האם הקובץ הזה פתוח?", "אני כבר עובד על המסמך הזה?"
+What should happen: two checks, the first that answers wins. (a) Enumerate top-level windows and match the file name in the title (Word titles are "<name> - Word"). (b) The Windows Restart Manager API (RmStartSession / RmRegisterResources / RmGetList) tells which process holds the file; this works for any app without Office automation. If Word automation is available (depends on the Office edition, see environment table) also check Word's Documents collection by full path. Answer in Hebrew: open in Word / not open.
+Touches: window list, Restart Manager, optionally Word.
+Must never: open or close anything.
+Spoken result: "כן, הוא פתוח בוורד" / "לא, הוא לא פתוח".
+Confirmation needed: none.
+Seed data for the VM: one document open in Word, one open in another app (PDF viewer), one closed.
+Done when: correct answer for open, closed, and open-in-another-app cases.
+
+### Bring a document to the front                       status: specified
+Ask: "תעביר אותי למסמך של המכתב", "תביא לי את המסמך לקדמה"
+Also phrased as: "תעבור למסמך הפתוח"
+What should happen: find its window (as in "Is a document open?"), restore it if minimized, bring it to the foreground with SetForegroundWindow. Windows refuses focus stealing from a background process, so use the AllowSetForegroundWindow / attach-thread-input or minimize-restore workaround (to be verified on the VM). With Word automation: Documents(path).Activate() plus Application.Activate.
+Touches: window list, optionally Word.
+Must never: open a second copy.
+Spoken result: "המסמך מולך".
+Confirmation needed: none.
+Seed data for the VM: two documents open, the target behind another window and one minimized.
+Done when: the document's window is the active window.
+
+### Close a document                                    status: idea
+Ask: "תסגור את המסמך", "תסגור את המכתב ותשמור"
+Also phrased as: "תסגור בלי לשמור"
+What should happen: needs the Office edition decision. For Word/Excel with automation available: find the document by path and read its Saved flag. If there are unsaved changes ask aloud "יש שינויים שלא נשמרו, לשמור?" and close with SaveChanges accordingly; if no changes, close without asking. Without automation (other apps): only a WM_CLOSE to the window, which lets the app show its own save prompt, and tell him to answer on screen.
+Touches: Word/Excel via automation, or the app's window.
+Must never: discard unsaved changes without his spoken yes.
+Spoken result: "שמרתי וסגרתי" / "סגרתי בלי לשמור" / "ענה על החלון שבמסך".
+Confirmation needed: before discarding.
+Seed data for the VM: an open dirty document and an open clean one.
+Done when: dirty and clean documents both close correctly.
+
 <!-- Add tasks below. Printing, calendar, reading a PDF aloud, summarising a long document, dictating a letter, renaming files, finding a photo... -->
 
+## Suggested order
+
+0. The PC-side tool loop itself: Claude calling tools from the conversation turn, with a spoken confirmation step and a plain on-screen list for plans (prerequisite for everything below).
+1. Find a document (Windows Search + document reader): the foundation every other task reuses.
+2. Open a file in its program, and Show a file in Explorer: trivial, make "find" immediately useful.
+3. Is a document open? and Bring a document to the front: small, window enumeration shared between them.
+4. Deduplicate a folder (first slice of Organise): clean spoken summary, moves only.
+5. Translate a document (OpenXML, no Word needed).
+6. Close a document: waits for the Office edition answer (Word automation).
+7. Organise beyond dedup: propose-then-approve plans.
+8. Email: last, after the mail client is known.
+
 # Inbox
-find a specific file based on content, name, location etc.
-open the file in windows explorer (open a new explorer that has this doc on focus)
-open the file in the right program (e.g. word)
-tell if a specific document is open
-focus on an open document
-close a specific document, optionally saving (ask user, maybe also check if is dirty)
+<!-- drop raw ideas here; they get expanded into the Tasks section -->
 
