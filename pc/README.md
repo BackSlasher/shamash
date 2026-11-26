@@ -158,13 +158,19 @@ Each turn's audio is written to `%LocalAppData%\Shamash\pclink\pclink-yyyyMMdd-H
 - v0.1.4 (the first build with the link server) was published while the VM app ran 0.1.3 with `SHAMASH_UPDATE_NOW=1` and one-minute checks: "Applying update 0.1.4 and restarting" at 09:55:55, "link: listening on http://0.0.0.0:8777" from the 0.1.4 process at 09:56:01. The inbound port rule had been added beforehand with the PowerShell line below (Private profile, which is what the VM's network is). Kestrel bound 0.0.0.0:8777 as the normal user with no URL ACL.
 - The Pixel 7 Pro (debug build, on the same Wi-Fi) ran the probe against the VM through the host's published port: 100 frames, 100 acks, RTT min/median/max/p95 10/19/137/35 ms, no gaps. The VM logged the hello with the phone's real LAN address and wrote `pclink-20261126-095707.wav`, 10.00 s of 16 kHz mono, which held real room audio (nobody spoke; RMS 86, peak 525).
 
+## Verified on Windows 11 with real ElevenLabs calls (2026-11-26, v0.1.6, `llm=echo`)
+
+- Night window, hands off: the service started 20:51 on 0.1.5 with the window set to 20:59-21:09 and one-minute checks, found v0.1.6 at 20:53:42, logged "holding update 0.1.6 until 20:59", and applied it at 21:03:46 (the first 5-minute window poll after 20:59) with nobody touching the VM. Note for the real deployment: Velopack also applies an already-downloaded update at the next app start regardless of the window, seen twice when the task was restarted.
+- `config.json` under `%LocalAppData%\Shamash` was read and logged as `config: elevenLabsKey=true anthropicApiKey=false llm=echo`.
+- `tools/pclink/client.sh` turn with a 7 s synthetic Hebrew sentence: `transcript` arrived 1.4 s after `end` with the exact text ("שלום. תמצא בבקשה את המאמר על ירושלים בתקופה העות'מאנית ותעביר אותו לאנגלית. תודה."), the echo reply followed, TTS first byte 0.3 s later, 7 s of 16 kHz reply audio streamed back, `done` at 2.5 s. With a 12 s noisy sample STT took 6.9 s and TTS first byte 0.9 s. So the ElevenLabs request shapes are confirmed.
+- A silent 3.7 s turn from the Pixel in link mode: empty transcript in 0.8 s, `done`, phone back to idle.
+
 ## Not verified
 
-- Conversation mode has only run against fakes (pipeline, in-process WebSocket, stubbed HTTP handlers); `pc/build.sh test` has 44 tests. Nothing was run against the real ElevenLabs STT/TTS or Anthropic APIs: request shapes (multipart fields, `xi-api-key`, TTS body, `eleven_v4_turbo`, `language_code`) and the Anthropic SDK call (`claude-opus-5-5`, `output_config.effort`) are unconfirmed, as are real latencies and the real error-body formats.
-- The phone side of conversation mode against this server, and conversation mode on Windows.
+- The Claude step (`claude-opus-5-5`, `output_config.effort`): the SDK call compiles and is covered by fakes, but the VM has no Anthropic key yet, so no real reply has been produced.
+- A spoken turn from the phone (someone talking into it) and the phone playing the reply audio through its speaker; only a silent turn ran from the phone.
 - Uninstall, shortcuts, and SmartScreen on a browser-downloaded Setup.exe (the VM copy came over the shared folder).
 - The firewall prompt itself: the rule was added before the service first listened.
-- Why the delta package is not used: Velopack downloaded the full package both times.
+- Why the delta package is not used: Velopack downloaded the full package every time, though vpk builds 7 KB deltas.
 - Release assets are unsigned; Windows SmartScreen may warn on first run.
-- vpk warns that `VelopackApp.Run()` "does not look like your application's entry point" because of top-level async `Main`. It is the first statement; whether this matters on Windows is unverified.
-- Delta packages do not exist yet (first release); delta updates are untested.
+- vpk warns that `VelopackApp.Run()` "does not look like your application's entry point" because of top-level async `Main`. Updates work regardless.
