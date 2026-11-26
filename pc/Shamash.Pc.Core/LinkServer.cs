@@ -292,6 +292,7 @@ public sealed class LinkHostedService(ILoggerFactory loggerFactory) : IHostedSer
         var log = loggerFactory.CreateLogger<ShamashSettings>();
         var settings = ShamashSettings.LoadDefault(log);
         settings.LogPresence(log);
+        log.LogInformation("config: documentRoots={Count}", settings.DocumentRoots.Count);
         ServiceStatus.Instance.SetConfig(settings.Describe());
         var pipeline = TurnPipeline.Create(settings, SharedHttp.Client, loggerFactory);
         var url = $"http://0.0.0.0:{LinkServer.PortFromEnvironment()}";

@@ -72,7 +72,7 @@ public sealed class ServiceStatus
                 ? $"error at {r.ErrorStage}: {r.ErrorMessage}"
                 : r.CancelledAt is not null
                     ? $"cancelled at {r.CancelledAt}"
-                    : $"\"{Clip(r.Transcript, 60)}\" -> \"{Clip(r.Reply, 60)}\" (stt {r.SttMs} ms, llm {r.LlmMs} ms, tts {r.TtsTotalMs} ms, total {r.TotalMs} ms)";
+                    : $"\"{Clip(r.Transcript, 60)}\" -> \"{Clip(r.Reply, 60)}\" (stt {r.SttMs} ms, llm {r.LlmMs} ms, {r.ToolCalls.Count} tool calls, tts {r.TtsTotalMs} ms, total {r.TotalMs} ms)";
         }
     }
 

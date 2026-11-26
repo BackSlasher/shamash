@@ -17,6 +17,9 @@ public sealed record ShamashSettings(
     public const string DefaultVoiceId = "JBFqnCBsd6RMkjVDRZzb";
     public const string DefaultClaudeModel = "claude-opus-5-5";
 
+    /// <summary>Folders the document tools may search and read. Default on Windows: Documents and Desktop.</summary>
+    public IReadOnlyList<string> DocumentRoots { get; init; } = [];
+
     public bool UseEchoLlm => string.Equals(Llm, "echo", StringComparison.OrdinalIgnoreCase);
 
     public static IReadOnlyList<string> DefaultConfigCandidates()
@@ -66,9 +69,32 @@ public sealed record ShamashSettings(
             Pick("ANTHROPIC_API_KEY", "anthropicApiKey"),
             (Pick("SHAMASH_LLM", "llm") ?? "claude").ToLowerInvariant(),
             Pick("SHAMASH_TTS_VOICE_ID", "ttsVoiceId") ?? DefaultVoiceId,
-            Pick("SHAMASH_CLAUDE_MODEL", "claudeModel") ?? DefaultClaudeModel);
+            Pick("SHAMASH_CLAUDE_MODEL", "claudeModel") ?? DefaultClaudeModel)
+        {
+            DocumentRoots = PickRoots(getEnv("SHAMASH_DOCUMENT_ROOTS"), file),
+        };
         doc?.Dispose();
         return s;
+    }
+
+    private static List<string> PickRoots(string? env, JsonElement? file)
+    {
+        var roots = new List<string>();
+        if (!string.IsNullOrWhiteSpace(env))
+            roots.AddRange(env.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+        else if (file is { } f && f.TryGetProperty("documentRoots", out var p))
+        {
+            if (p.ValueKind == JsonValueKind.Array)
+                roots.AddRange(p.EnumerateArray().Where(e => e.ValueKind == JsonValueKind.String).Select(e => e.GetString()!.Trim()));
+            else if (p.ValueKind == JsonValueKind.String)
+                roots.AddRange(p.GetString()!.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+        }
+        else if (OperatingSystem.IsWindows())
+        {
+            roots.Add(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments));
+            roots.Add(Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory));
+        }
+        return roots.Where(r => r.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
     }
 
     /// <summary>Booleans only; key values never appear.</summary>

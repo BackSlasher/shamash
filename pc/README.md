@@ -69,6 +69,20 @@ The `vpk` version (`vpk_version` in `build.sh`) must equal the `Velopack` packag
 | `SHAMASH_LLM` | runtime | `claude` (default) or `echo` |
 | `SHAMASH_TTS_VOICE_ID` | runtime | ElevenLabs voice, default `JBFqnCBsd6RMkjVDRZzb` |
 | `SHAMASH_CLAUDE_MODEL` | runtime | default `claude-opus-5-5` |
+| `SHAMASH_DOCUMENT_ROOTS` | runtime | semicolon-separated folders the document tools may search and read; config.json key `documentRoots` (string array); default on Windows: Documents and Desktop, elsewhere none |
+
+## Tools
+
+With `llm=claude` the reply model runs a tool loop (`ToolLoop`, `ClaudeReplyModel`): the tools are sent with each Messages call; on `tool_use` blocks every tool runs, the assistant content and one `tool_result` block per call go back, and it repeats for at most 8 rounds, after which a last call with `tool_choice` none forces a text answer. Tool errors reach the model as text starting `error:` and are never thrown. Each call (name, compact input, ms, result length) is saved in the turn JSON under `toolCalls` and the "turn: reply" log line and the status window show the count. `echo` mode has no tools.
+
+| Tool | Input | Result |
+|---|---|---|
+| `search_documents` | `query` (keywords), optional `kind` (`any`, `docx`, `pdf`, `xlsx`, `txt`), optional `max` (1-20, default 10) | a `method:` header (`index` or `walk`) then lines `n. name \| folder relative to the root \| yyyy-MM-dd \| size KB`, newest first |
+| `read_document` | `path` (full path, or `folder/name` as search showed it), optional `max_chars` (default 6000, cap 30000) | text of .docx (paragraphs and tables, cells tab-separated), .pdf (PdfPig), .xlsx (sheet name, first 200 rows, tabs), .txt/.md/.csv (UTF-8, BOM detected), cut with `[truncated, N chars total]` |
+
+How search works: on Windows it queries the Windows Search index through OLE DB (`Provider=Search.CollatorDSO`, table `SYSTEMINDEX`, one `SCOPE='file:<root>'` per document root; `CONTAINS` prefix match of all words ANDed, or `FREETEXT` of the whole query (catches Hebrew prefixed forms such as `העות` for `העות'מאנית`), or all words in the file name via `LIKE`; newest first). Claude keeps no index of its own. Words are split on whitespace, apostrophes, geresh, gershayim, quotes and hyphens. Once per process the service reads `HKEY_CLASSES_ROOT\<ext>\PersistentHandler` for .docx, .xlsx, .txt and .pdf: an extension without a handler is indexed by name only (on a machine without Office that is .docx and .xlsx). When the index answers, a content walk restricted to those name-only extensions (plus .txt when the index found no .txt, since a BOM-less UTF-8 file is not indexed) is added, merged by full path, index hits first; each line ends with `index` or `walk`. If the index throws (E_FAIL for a minute after boot, no index, not Windows) or returns nothing, the whole walk runs: file-name match on any word, and for files under 5 MB a content match requiring all words, capped at 2000 files and 10 s (the header says when the cap stopped it). Hebrew is plain UTF-16 end to end. The tool description tells the model to give Hebrew words without prefix letters and to retry once with another form before saying a file does not exist.
+
+Path guard: `read_document` refuses any path not under a document root (after `..` is normalised) with `error: path not under a document root`. Roots come from `documentRoots` / `SHAMASH_DOCUMENT_ROOTS` (see above); only the count is logged.
 
 ## Phone link probe
 
@@ -114,7 +128,7 @@ A hello with `"mode":"conversation"` (see `docs/link-protocol.md`) runs one turn
 Settings are loaded once at startup: environment variables win over `%LocalAppData%\Shamash\config.json` (fallback `.\config.json`; first existing file only), camelCase keys:
 
 ```json
-{ "elevenLabsKey": "...", "anthropicApiKey": "...", "llm": "claude", "ttsVoiceId": "JBFqnCBsd6RMkjVDRZzb", "claudeModel": "claude-opus-5-5" }
+{ "elevenLabsKey": "...", "anthropicApiKey": "...", "llm": "claude", "ttsVoiceId": "JBFqnCBsd6RMkjVDRZzb", "claudeModel": "claude-opus-5-5", "documentRoots": ["C:\\Users\\x\\Documents"] }
 ```
 
 Env names: `ELEVENLABS_KEY`, `ANTHROPIC_API_KEY`, `SHAMASH_LLM`, `SHAMASH_TTS_VOICE_ID`, `SHAMASH_CLAUDE_MODEL`. Key values are never logged, only whether they are present. Without an ElevenLabs key a turn fails with stage `internal`, "no ElevenLabs key configured" (probe mode still works); without an Anthropic key and `llm=claude` it fails with stage `llm`.
@@ -192,8 +206,15 @@ Each turn's audio is written to `%LocalAppData%\Shamash\pclink\pclink-yyyyMMdd-H
 - `Update.exe --uninstall --silent` removed the task and the process; reinstall worked.
 - Icon promotion (fresh restore, 40 s after install): `NotifyIconSettings` entry for `current\Shamash.Pc.exe` has `IsPromoted=1`; log shows `tray: promoted icon` 1.1 s after `link: listening`; the green disc is on the taskbar between the chevron and the cloud icon. A second turn: transcript 1.4 s, reply 3.8 s, done 5.1 s.
 
+## Verified: first tool-using turn (2026-11-27, 0.1.9 on the `win11-seeded` VM)
+
+- VM restored from `win11-seeded` (58-file Hebrew/English corpus in Documents and Desktop, no Office, so the index holds docx file names but not docx bodies), config with both keys, `Setup.exe --silent`, 90 s wait for the indexer after boot.
+- The 7 s test sentence (find the article about Ottoman Jerusalem and translate it): Claude called `search_documents` once with the query `ירושלים עות'מאנית` (prefix letter dropped as the tool description asks), which answered in 1.2 s with 844 chars of hits. Reply (Hebrew): it found two matching files, the survey in the מאמרים folder and a newer draft in Desktop stuff, said translation is not available yet, and offered to read or summarise one. Timings: STT 1.3 s, model incl. tool 5.0 s, TTS first byte 0.3 s, done at 8.4 s; 21 s of reply audio.
+- The per-turn JSON in `%LocalAppData%\Shamash\pclink` records `toolCalls` (name, input, ms, result chars).
+
 ## Not verified
 
+- Which path answered that search (index name match or the docx content walk); the result text is not recorded. The FREETEXT clause and the PersistentHandler read ran without error on the VM but were not inspected separately.
 - A spoken turn from the phone (someone talking into it) and the phone playing the reply audio through its speaker; only a silent turn ran from the phone.
 - Shortcuts, and SmartScreen on a browser-downloaded Setup.exe (the VM copy came over the shared folder).
 - The firewall prompt itself: the rule was added before the service first listened.

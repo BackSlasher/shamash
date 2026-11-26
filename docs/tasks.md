@@ -40,7 +40,7 @@ Done when: <observable check>
 
 ## Tasks
 
-### Find a document by what it is about                 status: specified
+### Find a document by what it is about                 status: tested-vm
 Ask: "תמצא בבקשה את המאמר על ירושלים בתקופה העות'מאנית"
 Also phrased as: "תפתח את הקובץ שנקרא מכתב לעירייה", "המסמך שעבדתי עליו אתמול", "הקובץ שבשולחן העבודה"
 What should happen: search his document folders by content (not just file name), rank, open the best match in Word, say what was found and where. The Windows Search query covers name, content, folder and modified date; the document reader is used to confirm candidates.
