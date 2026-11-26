@@ -112,8 +112,10 @@ public sealed class LinkServer(ILoggerFactory loggerFactory, string url, string 
                         if (type == "hello")
                         {
                             if (root!.RootElement.TryGetProperty("sampleRate", out var sr) && sr.TryGetInt32(out var v) && v > 0) rate = v;
+                            var wasConversation = conversation;
                             conversation = root.RootElement.TryGetProperty("mode", out var mode)
                                 && mode.ValueKind == JsonValueKind.String && mode.GetString() == "conversation";
+                            if (conversation && !wasConversation) ServiceStatus.Instance.TurnStarted();
                             _log.LogInformation("link: hello from {Peer}: {Hello}", peer, Encoding.UTF8.GetString(msg.GetBuffer(), 0, (int)msg.Length));
                         }
                         else if (type == "cancel" && conversation)
@@ -180,6 +182,7 @@ public sealed class LinkServer(ILoggerFactory loggerFactory, string url, string 
             }
             catch (Exception e) when (e is WebSocketException or OperationCanceledException or IOException) { }
             if (turnResult is not null) SaveTurnJson(turnResult, stamp);
+            ServiceStatus.Instance.TurnEnded(turnResult);
             _log.LogInformation("link: conversation peer={Peer} frames={Frames} bytes={Bytes} audio={Audio}s wall={Wall}s",
                 peer, stats.Frames, stats.Bytes, stats.AudioSeconds(rate).ToString("F2", CultureInfo.InvariantCulture),
                 sw.Elapsed.TotalSeconds.ToString("F2", CultureInfo.InvariantCulture));
@@ -289,13 +292,20 @@ public sealed class LinkHostedService(ILoggerFactory loggerFactory) : IHostedSer
         var log = loggerFactory.CreateLogger<ShamashSettings>();
         var settings = ShamashSettings.LoadDefault(log);
         settings.LogPresence(log);
+        ServiceStatus.Instance.SetConfig(settings.Describe());
         var pipeline = TurnPipeline.Create(settings, SharedHttp.Client, loggerFactory);
-        _server = new LinkServer(loggerFactory, $"http://0.0.0.0:{LinkServer.PortFromEnvironment()}", LinkServer.DefaultOutDir(), pipeline);
-        try { await _server.StartAsync(ct); }
+        var url = $"http://0.0.0.0:{LinkServer.PortFromEnvironment()}";
+        _server = new LinkServer(loggerFactory, url, LinkServer.DefaultOutDir(), pipeline);
+        try
+        {
+            await _server.StartAsync(ct);
+            ServiceStatus.Instance.SetLink(url, null);
+        }
         catch (Exception e)
         {
             // A busy port must not take down updates and heartbeat.
             loggerFactory.CreateLogger<LinkHostedService>().LogError(e, "link: failed to start");
+            ServiceStatus.Instance.SetLink(null, e.Message);
             _server = null;
         }
     }

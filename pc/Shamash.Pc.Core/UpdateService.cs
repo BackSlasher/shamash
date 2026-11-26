@@ -22,6 +22,7 @@ public sealed class UpdateService(ILogger<UpdateService> log) : BackgroundServic
         if (!mgr.IsInstalled)
         {
             log.LogInformation("not installed via Velopack, skipping updates");
+            ServiceStatus.Instance.UpdateChecked("not installed via Velopack, no updates");
             return;
         }
 
@@ -30,6 +31,7 @@ public sealed class UpdateService(ILogger<UpdateService> log) : BackgroundServic
         log.LogInformation("Update window {Start}-{End} local time, applyImmediately={Now}, checkEvery={Interval}",
             window.Start, window.End, now, CheckInterval);
 
+        var status = ServiceStatus.Instance;
         while (!stoppingToken.IsCancellationRequested)
         {
             try
@@ -37,23 +39,29 @@ public sealed class UpdateService(ILogger<UpdateService> log) : BackgroundServic
                 var update = await mgr.CheckForUpdatesAsync();
                 if (update != null)
                 {
-                    log.LogInformation("Update available: {Version}", update.TargetFullRelease.Version);
+                    var v = update.TargetFullRelease.Version.ToString();
+                    log.LogInformation("Update available: {Version}", v);
+                    status.UpdateChecked($"downloading {v}", v);
                     await mgr.DownloadUpdatesAsync(update, cancelToken: stoppingToken);
-                    log.LogInformation("Update {Version} downloaded", update.TargetFullRelease.Version);
+                    log.LogInformation("Update {Version} downloaded", v);
 
                     if (!now && !window.Contains(TimeOnly.FromDateTime(DateTime.Now)))
                     {
                         log.LogInformation("Outside the update window, holding update {Version} until {Start}",
-                            update.TargetFullRelease.Version, window.Start);
-                        while (!window.Contains(TimeOnly.FromDateTime(DateTime.Now)))
-                            await Task.Delay(WindowPoll, stoppingToken);
+                            v, window.Start);
+                        status.UpdateChecked($"{v} downloaded, waiting for the {window.Start:HH\\:mm}-{window.End:HH\\:mm} window", v);
+                        // The tray menu's "Install update now" ends the wait early.
+                        while (!window.Contains(TimeOnly.FromDateTime(DateTime.Now)) && !status.ApplyNowRequested)
+                            await status.WaitForCheckRequestAsync(WindowPoll, stoppingToken);
                     }
 
-                    log.LogInformation("Applying update {Version} and restarting", update.TargetFullRelease.Version);
+                    log.LogInformation("Applying update {Version} and restarting", v);
+                    status.UpdateChecked($"applying {v}", v);
                     mgr.ApplyUpdatesAndRestart(update);
                     return;
                 }
                 log.LogInformation("No update available");
+                status.UpdateChecked("up to date");
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
@@ -62,9 +70,11 @@ public sealed class UpdateService(ILogger<UpdateService> log) : BackgroundServic
             catch (Exception ex)
             {
                 log.LogWarning(ex, "Update check failed; will retry");
+                status.UpdateChecked("check failed: " + ex.Message);
             }
 
-            try { await Task.Delay(CheckInterval, stoppingToken); }
+            // Sleep until the next scheduled check, or until the tray menu asks for one.
+            try { await status.WaitForCheckRequestAsync(CheckInterval, stoppingToken); }
             catch (OperationCanceledException) { return; }
         }
     }

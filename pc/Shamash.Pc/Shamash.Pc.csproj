@@ -1,27 +1,31 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
+  <!-- The Windows host: no console window (WinExe), a notification-area icon with a menu and a
+       status window (WinForms). All logic is in Shamash.Pc.Core. Builds on Linux with
+       EnableWindowsTargeting; runs only on Windows. -->
   <PropertyGroup>
-    <OutputType>Exe</OutputType>
-    <TargetFramework>net10.0</TargetFramework>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <AssemblyName>Shamash.Pc</AssemblyName>
     <RootNamespace>Shamash.Pc</RootNamespace>
+    <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
     <Version Condition="'$(SHAMASH_VERSION_NAME)' != ''">$(SHAMASH_VERSION_NAME)</Version>
     <Version Condition="'$(SHAMASH_VERSION_NAME)' == ''">0.1.0</Version>
     <InvariantGlobalization>true</InvariantGlobalization>
   </PropertyGroup>
 
   <ItemGroup>
-    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <ProjectReference Include="..\Shamash.Pc.Core\Shamash.Pc.Core.csproj" />
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="Anthropic" Version="13.14.0" />
     <PackageReference Include="Velopack" Version="1.2.161" />
     <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.15" />
     <PackageReference Include="Serilog.Extensions.Hosting" Version="10.0.0" />
-    <PackageReference Include="Serilog.Sinks.Console" Version="6.1.1" />
     <PackageReference Include="Serilog.Sinks.File" Version="7.0.0" />
   </ItemGroup>
 

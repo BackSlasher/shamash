@@ -4,6 +4,7 @@ A .NET 10 Generic Host worker for the Windows PC. Currently a placeholder that p
 
 ## Contents
 
+- `Shamash.Pc.Core/` - the logic (net10.0 library, unit tested); `Shamash.Pc/` - the Windows host (WinExe, WinForms tray icon and status window: `TrayApp`, `StatusForm`, `TrayPromotion`). The list below is the logic in Core except `Program.cs`.
 - `Shamash.Pc/` - the app. `Program.cs` calls `VelopackApp.Build().Run()` first, then starts the host.
   - `UpdateService` - on startup and every 6 hours checks `https://github.com/BackSlasher/shamash` (GitHub Releases, stable only) via Velopack. If an update exists it is downloaded, then applied with `ApplyUpdatesAndRestart` only inside the update window. If `UpdateManager.IsInstalled` is false it logs "not installed via Velopack, skipping updates" and does nothing.
   - `UpdateWindow` - pure static-style parsing/containment logic (unit tested).
@@ -11,6 +12,12 @@ A .NET 10 Generic Host worker for the Windows PC. Currently a placeholder that p
   - `LinkServer` / `LinkHostedService` - phone link probe server (see below); `LinkFrame`, `LinkSessionStats`, `WavWriter` are the pure parts.
 - `Shamash.Pc.Tests/` - xunit tests for `UpdateWindow` (same-day window, window crossing midnight, empty window, malformed input falls back to the 03:00-05:00 default).
 - `build.sh` - runs everything in podman (`mcr.microsoft.com/dotnet/sdk:10.0`), caches in volume `shamash-dotnet-cache` (NuGet packages in `/cache/nuget`, `vpk` in `/cache/tools`).
+
+## Tray icon and status window
+
+The service shows no window. The owner sees a coloured disc with a white shin on the taskbar: green idle, orange answering, red error, grey starting. Right-click menu: Status..., Open log folder, Open recordings folder, Check for updates (or "Install update <v> now" when one is pending), Quit Shamash. Double-click opens the status window (version, link, config, turns, update state, recent log, buttons for the log folder, update check and copying diagnostics). Closing the window only hides it. Quit stops the service until the next logon or a manual start of the `Shamash.Pc` task.
+
+Windows 11 puts new tray icons in the overflow flyout, so on startup `TrayPromotion` sets `IsPromoted=1` under `HKCU\Control Panel\NotifyIconSettings\<id>` for our exe (retried for ~30 s while Explorer creates the entry). It only writes when the value is missing, so an icon the user hid stays hidden.
 
 ## Logging choice
 
@@ -176,6 +183,14 @@ Each turn's audio is written to `%LocalAppData%\Shamash\pclink\pclink-yyyyMMdd-H
 
 - The VM was restored to the `win11-base` snapshot (`tools/winvm/snapshot.sh`, no Shamash on it), then `Setup.exe --silent` from the shared folder: exit 0; `install.log` shows `after-install 0.1.7`, `schtasks /Create` SUCCESS, `/Run` SUCCESS; `Get-ScheduledTask` reports Ready, `ExecutionTimeLimit PT0S`, a logon trigger; exactly one `current\Shamash.Pc.exe` process; the service logged "No update available" 7 s after the installer returned.
 - `Update.exe --uninstall --silent`: exit 0, `before-uninstall 0.1.7`, `schtasks /Delete` SUCCESS, task gone. Velopack leaves `Update.exe` itself and `%LocalAppData%\Shamash` (config and logs) behind; the data folder is intentional so a reinstall keeps its config.
+
+## Verified: 0.1.8 tray host (2026-11-27, clean `win11-base` VM, local pack)
+
+- `Setup.exe --silent` exit 0; task Ready; exactly one `Shamash.Pc` process, SessionId 1; no console window on the desktop (screenshot).
+- Config line `elevenLabsKey=true anthropicApiKey=true llm=claude` and `link: listening on http://0.0.0.0:8777` in the log.
+- One conversation turn from the host (`--fast`): transcript at 6.3 s, reply at 8.6 s, done at 10.0 s.
+- `Update.exe --uninstall --silent` removed the task and the process; reinstall worked.
+- Icon promotion (fresh restore, 40 s after install): `NotifyIconSettings` entry for `current\Shamash.Pc.exe` has `IsPromoted=1`; log shows `tray: promoted icon` 1.1 s after `link: listening`; the green disc is on the taskbar between the chevron and the cloud icon. A second turn: transcript 1.4 s, reply 3.8 s, done 5.1 s.
 
 ## Not verified
 

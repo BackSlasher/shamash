@@ -32,7 +32,9 @@ Disk image and state: `~/vm/shamash-win11/` (`SHAMASH_WINVM_DIR` overrides). `sh
 - Inside Windows, open the port once: `New-NetFirewallRule -DisplayName "Shamash link 8777" -Direction Inbound -Protocol TCP -LocalPort 8777 -Action Allow -Profile Any` over SSH (the SSH session is elevated).
 - The QEMU monitor socket at `/run/shm/monitor.sock` in the container accepts `sendkey` and
   `screendump`, which is enough to drive the desktop without the web viewer, including the Run
-  dialog and UAC prompts.
+  dialog and UAC prompts. `KEY:meta_l-b` did not focus the notification area (it opened Start).
+  Notification icons can be inspected and promoted over SSH instead: `HKCU:\Control Panel\NotifyIconSettings\<id>` has
+  `ExecutablePath` and `IsPromoted` (DWORD; 1 = always on the taskbar, otherwise it sits in the overflow).
 - Over SSH the session is a normal user session: Velopack's `Setup.exe --silent` installed to
   `%LocalAppData%\Shamash.Pc` with exit code 0 and no prompt. A logon scheduled task with no
   execution time limit starts the stub `Shamash.Pc.exe`, which spawns `current\Shamash.Pc.exe`

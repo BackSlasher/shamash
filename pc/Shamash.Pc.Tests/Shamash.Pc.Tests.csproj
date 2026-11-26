@@ -14,7 +14,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\Shamash.Pc\Shamash.Pc.csproj" />
+    <ProjectReference Include="..\Shamash.Pc.Core\Shamash.Pc.Core.csproj" />
   </ItemGroup>
 
 </Project>

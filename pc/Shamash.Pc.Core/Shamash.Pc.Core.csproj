@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Everything that is not Windows UI: link server, conversation pipeline, updates, settings.
+       Cross-platform so the tests run on Linux in the build container. -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>Shamash.Pc.Core</AssemblyName>
+    <RootNamespace>Shamash.Pc</RootNamespace>
+    <Version Condition="'$(SHAMASH_VERSION_NAME)' != ''">$(SHAMASH_VERSION_NAME)</Version>
+    <Version Condition="'$(SHAMASH_VERSION_NAME)' == ''">0.1.0</Version>
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Anthropic" Version="13.14.0" />
+    <PackageReference Include="Velopack" Version="1.2.161" />
+    <PackageReference Include="Serilog.Extensions.Hosting" Version="10.0.0" />
+  </ItemGroup>
+
+</Project>

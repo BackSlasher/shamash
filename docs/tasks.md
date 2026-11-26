@@ -81,3 +81,12 @@ Seed data for the VM: a test mailbox with a handful of Hebrew and English thread
 Done when: a reply arrives at a test address.
 
 <!-- Add tasks below. Printing, calendar, reading a PDF aloud, summarising a long document, dictating a letter, renaming files, finding a photo... -->
+
+# Inbox
+find a specific file based on content, name, location etc.
+open the file in windows explorer (open a new explorer that has this doc on focus)
+open the file in the right program (e.g. word)
+tell if a specific document is open
+focus on an open document
+close a specific document, optionally saving (ask user, maybe also check if is dirty)
+
