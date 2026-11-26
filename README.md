@@ -155,7 +155,7 @@ Debug builds only, with the app open:
 adb shell "am broadcast -a net.backslasher.shamash.SPEAK -p net.backslasher.shamash --es text 'שלום, זאת בדיקה'"
 ```
 
-Keep the whole command in one quoted string, with the text in single quotes inside it. `adb shell` joins separate arguments with plain spaces, so `--es text "two words"` reaches `am` as two arguments and the broadcast is dropped silently (`Broadcast completed: result=0` either way, and nothing in the log). Success looks like `tts: SPEAK received` followed by `tts: first audio after N ms` in `adb logcat -s Shamash`.
+This still works in the link-mode debug build (checked 2026-11-26 23:22 over Wi-Fi adb: first audio after 503 ms); it uses the phone's own ElevenLabs TTS, not the PC, so it tests the speaker path and the voice, not the link. Keep the whole command in one quoted string, with the text in single quotes inside it. `adb shell` joins separate arguments with plain spaces, so `--es text "two words"` reaches `am` as two arguments and the broadcast is dropped silently (`Broadcast completed: result=0` either way, and nothing in the log). Success looks like `tts: SPEAK received` followed by `tts: first audio after N ms` in `adb logcat -s Shamash`.
 
 Latency: `adb logcat -s Shamash | grep tts:` prints `tts: first audio after N ms, total M ms, bytes B`. "First audio" is request start to first PCM bytes (add a few ms for the track to start). Desk measurement with the live test: 386 ms first audio, 660 ms total, for a 3 s sentence. Live test: `./build.sh testDebugUnitTest -PliveApi=true --tests '*Live*'`.
 

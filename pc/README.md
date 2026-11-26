@@ -165,9 +165,15 @@ Each turn's audio is written to `%LocalAppData%\Shamash\pclink\pclink-yyyyMMdd-H
 - `tools/pclink/client.sh` turn with a 7 s synthetic Hebrew sentence: `transcript` arrived 1.4 s after `end` with the exact text ("שלום. תמצא בבקשה את המאמר על ירושלים בתקופה העות'מאנית ותעביר אותו לאנגלית. תודה."), the echo reply followed, TTS first byte 0.3 s later, 7 s of 16 kHz reply audio streamed back, `done` at 2.5 s. With a 12 s noisy sample STT took 6.9 s and TTS first byte 0.9 s. So the ElevenLabs request shapes are confirmed.
 - A silent 3.7 s turn from the Pixel in link mode: empty transcript in 0.8 s, `done`, phone back to idle.
 
+## Verified: first real Claude turns (2026-11-27 07:21, v0.1.6, `llm=claude`)
+
+- `config.json` regenerated with `tools/pc-config.py <out> --llm claude`, copied over the shared folder, service restarted: `config: elevenLabsKey=true anthropicApiKey=true llm=claude`.
+- Same 7 s Hebrew sentence (a request to find an article about Ottoman Jerusalem and translate it to English). Claude answered in Hebrew within the system prompt's one-to-three sentences, asking which article and whether the author or title is known. Timings from the service log: STT 1459 ms, Claude 2443 ms, TTS first byte 952 ms, 10.2 s of reply audio, `done` at 5835 ms.
+- The same sentence sent again as a second turn: the reply started with "sorry, maybe I was not clear" and narrowed the question (is it the user's own article saved on this computer), so the per-process history reaches the model. STT 988 ms, Claude 2340 ms, TTS first byte 191 ms, `done` at 4475 ms.
+- Nothing from the key, the prompt or the reply is logged; only lengths and timings.
+
 ## Not verified
 
-- The Claude step (`claude-opus-5-5`, `output_config.effort`): the SDK call compiles and is covered by fakes, but the VM has no Anthropic key yet, so no real reply has been produced.
 - A spoken turn from the phone (someone talking into it) and the phone playing the reply audio through its speaker; only a silent turn ran from the phone.
 - Uninstall, shortcuts, and SmartScreen on a browser-downloaded Setup.exe (the VM copy came over the shared folder).
 - The firewall prompt itself: the rule was added before the service first listened.
