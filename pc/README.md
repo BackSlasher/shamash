@@ -79,10 +79,28 @@ With `llm=claude` the reply model runs a tool loop (`ToolLoop`, `ClaudeReplyMode
 |---|---|---|
 | `search_documents` | `query` (keywords), optional `kind` (`any`, `docx`, `pdf`, `xlsx`, `txt`), optional `max` (1-20, default 10) | a `method:` header (`index` or `walk`) then lines `n. name \| folder relative to the root \| yyyy-MM-dd \| size KB`, newest first |
 | `read_document` | `path` (full path, or `folder/name` as search showed it), optional `max_chars` (default 6000, cap 30000) | text of .docx (paragraphs and tables, cells tab-separated), .pdf (PdfPig), .xlsx (sheet name, first 200 rows, tabs), .txt/.md/.csv (UTF-8, BOM detected), cut with `[truncated, N chars total]` |
+| `show_in_explorer` | `path` | runs `explorer.exe /select,"<path>"`; returns the folder name |
+| `open_file` | `path` | if the document is already open (as `is_document_open`) focuses it and says so; else `Process.Start` with `UseShellExecute` (default app); `opened <name> with the default app` or the error text |
+| `is_document_open` | `path` | `open: window "<title>" (process <name>)` (visible top-level window whose title holds the file name with or without extension, `WindowMatcher`), else `held by process <name>, no window found` (Restart Manager, rstrtmgr.dll), else `not open` |
+| `focus_document` | `path` | finds the window as above, restores it if minimized, then `SetForegroundWindow`; if that does not take the foreground, the `AttachThreadInput` workaround, last the ALT-key trick; returns the step that worked, or `not open` |
+| `find_duplicates` | `folder` (full path or relative to a document root), optional `include_subfolders` (default true) | plan id, counts (groups, duplicate files, bytes) and up to 30 group lines; nothing is moved |
+| `apply_plan` | `plan_id` | moves the extra copies into `<folder>\כפולים\`, counts and the first moves |
+| `undo_plan` | `plan_id` | moves them back from the journal, counts and any skipped files |
+| `translate_document` | `path` (as for `read_document`), `target_language` (`en` or `he`), optional `only_summary` (default false) | `ok: saved as <path relative to the root> \| folder: <name> \| paragraphs: N \| batches: B \| ms`, or with `only_summary` a five-sentence summary in the target language and no file; `error: ...` on failure |
+
+The four window tools (`WindowTools.cs`, all P/Invoke in `WindowNative`) resolve `path` like `read_document` (same guard, shared `ReadDocumentTool.Resolve`) and return `error: Windows only` on other systems.
+
+Test aid, text turns: with `allowTextTurns` true in config.json (or `SHAMASH_ALLOW_TEXT_TURNS=1`; default false) a conversation `hello` carrying `"text"` skips STT and uses the text as the transcript (see `docs/link-protocol.md`). Drive it without a phone: `tools/pclink/client.sh ws://<pc>:8777/ --text "תפתח את המכתב לעירייה"`.
 
 How search works: on Windows it queries the Windows Search index through OLE DB (`Provider=Search.CollatorDSO`, table `SYSTEMINDEX`, one `SCOPE='file:<root>'` per document root; `CONTAINS` prefix match of all words ANDed, or `FREETEXT` of the whole query (catches Hebrew prefixed forms such as `העות` for `העות'מאנית`), or all words in the file name via `LIKE`; newest first). Claude keeps no index of its own. Words are split on whitespace, apostrophes, geresh, gershayim, quotes and hyphens. Once per process the service reads `HKEY_CLASSES_ROOT\<ext>\PersistentHandler` for .docx, .xlsx, .txt and .pdf: an extension without a handler is indexed by name only (on a machine without Office that is .docx and .xlsx). When the index answers, a content walk restricted to those name-only extensions (plus .txt when the index found no .txt, since a BOM-less UTF-8 file is not indexed) is added, merged by full path, index hits first; each line ends with `index` or `walk`. If the index throws (E_FAIL for a minute after boot, no index, not Windows) or returns nothing, the whole walk runs: file-name match on any word, and for files under 5 MB a content match requiring all words, capped at 2000 files and 10 s (the header says when the cap stopped it). Hebrew is plain UTF-16 end to end. The tool description tells the model to give Hebrew words without prefix letters and to retry once with another form before saying a file does not exist.
 
 Path guard: `read_document` refuses any path not under a document root (after `..` is normalised) with `error: path not under a document root`. Roots come from `documentRoots` / `SHAMASH_DOCUMENT_ROOTS` (see above); only the count is logged.
+
+### Organising
+
+`find_duplicates` skips files over 50 MB and groups exact copies by SHA-256; among .docx/.txt/.pdf it also groups near-copies (Jaccard of word 3-grams >= 0.8, sizes within 30%, case and whitespace ignored). The keeper of a group is the newest file (ties: a name without "עותק", "Copy", "(1)", then the shortest). The plan is kept in memory (`p1`, `p2`, ...; lost on restart), written as `<folder>\תוכנית סידור <yyyy-MM-dd HHmm>.txt` and opened with the default app on Windows. `apply_plan` moves the extra copies into `<folder>\כפולים\` keeping their subfolder structure; an existing target gets ` (2)`; nothing is overwritten or deleted; a plan can be applied once. Every move is a tab-separated line (timestamp, plan id, from, to) in `%LocalAppData%\Shamash\moves.log`. `undo_plan` reads that journal and moves the files back, skipping any whose original place is now taken. The system prompt makes the model describe the plan and wait for a clear yes in a later turn.
+
+Translation: `translate_document` reads the document and sends the non-empty paragraphs to the model in batches of up to 40 (and 15000 characters) as a JSON array of `{id, text}`; the answer must be the same array in the same order, parsed strictly and retried once on a malformed reply, otherwise the tool returns an error. The call goes through `ITranslator` (`ClaudeTranslator` uses the same `AnthropicClient` construction as the chat, `Effort.Low`, no tools; the model is `translateModel` in config.json or `SHAMASH_TRANSLATE_MODEL`, default the chat model). The new file is built in memory and written only when every batch succeeded; the original is never opened for writing. The result is saved next to the original as `<name> (English).<ext>` or `<name> (עברית).<ext>`; if that exists, ` (2)`, ` (3)` and so on is appended, nothing is overwritten. .docx: every paragraph in the body, tables included, is rewritten in place: the text goes into the paragraph's first text run (its run properties, the paragraph style, numbering and table structure stay), the other runs' text is removed, and for Hebrew `w:bidi` is added while for English it is removed, with `w:jc` left and right swapped when present. Formatting that changes mid-paragraph (a bold word inside a sentence) is lost: the paragraph takes the first run's look. Not translated and left as they are: headers and footers, footnotes and endnotes, text boxes, comments, images. .txt and .md: blocks separated by blank lines, saved with the same extension as UTF-8. .pdf: text is extracted with PdfPig, split on blank lines (very long blocks are cut at sentence ends), and a plain .docx with one paragraph per block is produced; the PDF layout is not kept. Not verified against real Word rendering or a real model call yet.
 
 ## Phone link probe
 
@@ -212,8 +230,26 @@ Each turn's audio is written to `%LocalAppData%\Shamash\pclink\pclink-yyyyMMdd-H
 - The 7 s test sentence (find the article about Ottoman Jerusalem and translate it): Claude called `search_documents` once with the query `ירושלים עות'מאנית` (prefix letter dropped as the tool description asks), which answered in 1.2 s with 844 chars of hits. Reply (Hebrew): it found two matching files, the survey in the מאמרים folder and a newer draft in Desktop stuff, said translation is not available yet, and offered to read or summarise one. Timings: STT 1.3 s, model incl. tool 5.0 s, TTS first byte 0.3 s, done at 8.4 s; 21 s of reply audio.
 - The per-turn JSON in `%LocalAppData%\Shamash\pclink` records `toolCalls` (name, input, ms, result chars).
 
+## Verified: steps 2-5 of the task order (2026-11-27, 0.1.10 on the `win11-seeded` VM, text turns)
+
+Nine scripted turns through `tools/pclink/client.sh --text` with `allowTextTurns` on, real Claude and ElevenLabs. Tool calls as recorded in the turn JSON; screenshots checked after each turn.
+
+- "Show me the letter to the municipality in the file manager": `search_documents` then `show_in_explorer`; an Explorer window opened on the מכתבים folder with the file selected. Reply also mentioned the duplicates and offered to organise.
+- "Open the file Jerusalem Ottoman period notes": `search_documents`, `open_file`; Edge opened the PDF (the VM has no Word, so PDFs and text files are the openable types there).
+- "Is it open now?": `is_document_open` answered in 2 ms (window title match); reply: yes, in Edge.
+- "Bring it to the front": `focus_document` 197 ms; Edge came in front of the Explorer window.
+- "Organise the articles folder": `find_duplicates` 419 ms; the plan file opened in Notepad (4 groups, 5 files, one exact copy and three older versions from ישנים); the reply described it in three sentences and asked whether to proceed.
+- "Yes, do it": the model re-ran `find_duplicates` (plan p2) and `apply_plan`; 5 files moved into מאמרים\כפולים, 5 lines in `moves.log`, nothing deleted.
+- "Undo it": `undo_plan`; כפולים empty afterwards. The model first searched for and read the plan file, which was unnecessary but harmless.
+- "Translate the Ottoman Jerusalem survey to English": `translate_document` 5.6 s; `ירושלים בתקופה העות'מאנית - סקירה (English).docx` written next to the original (37 KB), original untouched; reply named the folder and offered to open it.
+- "Read me the first two paragraphs of the translated file": `read_document` on the new file; the English text came back coherent (Sharia court records, the 1517 conquest, Istanbul archives), so the OpenXML rewrite kept paragraph order and the translation is real.
+
+Turn times with one tool call were 3-8 s; the translation turn 11 s.
+
 ## Not verified
 
+- The translated .docx has not been opened in Word (no Word on the VM): direction flags, table rendering, and run formatting are checked only by re-reading the XML.
+- `open_file` on a .docx with Word installed, and the already-open path (focus instead of a second copy).
 - Which path answered that search (index name match or the docx content walk); the result text is not recorded. The FREETEXT clause and the PersistentHandler read ran without error on the VM but were not inspected separately.
 - A spoken turn from the phone (someone talking into it) and the phone playing the reply audio through its speaker; only a silent turn ran from the phone.
 - Shortcuts, and SmartScreen on a browser-downloaded Setup.exe (the VM copy came over the shared folder).

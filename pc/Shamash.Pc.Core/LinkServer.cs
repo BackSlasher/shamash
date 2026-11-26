@@ -81,6 +81,7 @@ public sealed class LinkServer(ILoggerFactory loggerFactory, string url, string 
         var stats = new LinkSessionStats();
         var buf = new byte[64 * 1024];
         var conversation = false;
+        string? helloText = null;
         var stamp = DateTime.Now;
         using var turnCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
         using var loopCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
@@ -115,6 +116,7 @@ public sealed class LinkServer(ILoggerFactory loggerFactory, string url, string 
                             var wasConversation = conversation;
                             conversation = root.RootElement.TryGetProperty("mode", out var mode)
                                 && mode.ValueKind == JsonValueKind.String && mode.GetString() == "conversation";
+                            helloText = root.RootElement.TryGetProperty("text", out var tx) && tx.ValueKind == JsonValueKind.String ? tx.GetString() : null;
                             if (conversation && !wasConversation) ServiceStatus.Instance.TurnStarted();
                             _log.LogInformation("link: hello from {Peer}: {Hello}", peer, Encoding.UTF8.GetString(msg.GetBuffer(), 0, (int)msg.Length));
                         }
@@ -131,7 +133,7 @@ public sealed class LinkServer(ILoggerFactory loggerFactory, string url, string 
                                 var sender = new WebSocketSender(ws);
                                 var audio = pcm.ToArray();
                                 SaveWav(audio, rate, stamp);
-                                turn = RunTurnAsync(audio, rate, sender, turnCts.Token, ws, loopCts);
+                                turn = RunTurnAsync(audio, rate, sender, turnCts.Token, ws, loopCts, helloText);
                             }
                         }
                     }
@@ -222,10 +224,10 @@ public sealed class LinkServer(ILoggerFactory loggerFactory, string url, string 
             sw.Elapsed.TotalSeconds.ToString("F2", CultureInfo.InvariantCulture), stats.Gaps, jit);
     }
 
-    private async Task<TurnResult> RunTurnAsync(byte[] pcm, int rate, ITurnSender sender, CancellationToken ct, WebSocket ws, CancellationTokenSource loopCts)
+    private async Task<TurnResult> RunTurnAsync(byte[] pcm, int rate, ITurnSender sender, CancellationToken ct, WebSocket ws, CancellationTokenSource loopCts, string? text = null)
     {
         TurnResult r;
-        try { r = await _pipeline.Value.RunAsync(pcm, rate, sender, ct); }
+        try { r = await _pipeline.Value.RunAsync(pcm, rate, sender, ct, text); }
         catch (Exception e)
         {
             _log.LogError(e, "turn: internal failure");

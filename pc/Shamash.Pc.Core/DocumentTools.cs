@@ -172,7 +172,7 @@ public sealed class ReadDocumentTool(IReadOnlyList<string> roots) : IAgentTool
         var path = ToolText.GetString(input, "path");
         if (string.IsNullOrWhiteSpace(path)) return "error: path is required";
         var max = Math.Clamp(ToolText.GetInt(input, "max_chars") ?? DefaultMaxChars, 100, HardMaxChars);
-        var full = Resolve(path);
+        var full = Resolve(path, roots);
         if (full is null) return "error: path not under a document root";
         if (!File.Exists(full)) return "error: file not found";
         if (!DocumentReader.IsSupported(full)) return $"error: unsupported file type {Path.GetExtension(full)}";
@@ -192,7 +192,7 @@ public sealed class ReadDocumentTool(IReadOnlyList<string> roots) : IAgentTool
     }
 
     /// <summary>Full path if it is (or maps to) a location under a root; null when outside every root.</summary>
-    private string? Resolve(string path)
+    internal static string? Resolve(string path, IReadOnlyList<string> roots)
     {
         if (Path.IsPathFullyQualified(path))
             return PathGuard.IsUnderRoots(path, roots) ? Path.GetFullPath(path) : null;

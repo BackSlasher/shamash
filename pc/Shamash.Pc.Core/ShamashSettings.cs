@@ -20,6 +20,12 @@ public sealed record ShamashSettings(
     /// <summary>Folders the document tools may search and read. Default on Windows: Documents and Desktop.</summary>
     public IReadOnlyList<string> DocumentRoots { get; init; } = [];
 
+    /// <summary>Model for translate_document; null means the chat model. Env SHAMASH_TRANSLATE_MODEL, config key translateModel.</summary>
+    public string? TranslateModel { get; init; }
+
+    /// <summary>Test aid: allow a conversation hello to carry "text" instead of audio. Default false.</summary>
+    public bool AllowTextTurns { get; init; }
+
     public bool UseEchoLlm => string.Equals(Llm, "echo", StringComparison.OrdinalIgnoreCase);
 
     public static IReadOnlyList<string> DefaultConfigCandidates()
@@ -72,9 +78,17 @@ public sealed record ShamashSettings(
             Pick("SHAMASH_CLAUDE_MODEL", "claudeModel") ?? DefaultClaudeModel)
         {
             DocumentRoots = PickRoots(getEnv("SHAMASH_DOCUMENT_ROOTS"), file),
+            TranslateModel = Pick("SHAMASH_TRANSLATE_MODEL", "translateModel"),
+            AllowTextTurns = PickBool(getEnv("SHAMASH_ALLOW_TEXT_TURNS"), file, "allowTextTurns"),
         };
         doc?.Dispose();
         return s;
+    }
+
+    private static bool PickBool(string? env, JsonElement? file, string key)
+    {
+        if (!string.IsNullOrWhiteSpace(env)) return env.Trim() is "1" or "true" or "True" or "TRUE";
+        return file is { } f && f.TryGetProperty(key, out var p) && p.ValueKind == JsonValueKind.True;
     }
 
     private static List<string> PickRoots(string? env, JsonElement? file)

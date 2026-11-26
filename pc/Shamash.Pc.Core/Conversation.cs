@@ -99,8 +99,11 @@ public sealed class TurnResult
 }
 
 /// <summary>Runs one conversation turn: STT, LLM, TTS, against an abstract sender. Holds the running history.</summary>
-public sealed class TurnPipeline(ISpeechToText stt, IReplyModel llm, ITextToSpeech tts, ILogger log)
+public sealed class TurnPipeline(ISpeechToText stt, IReplyModel llm, ITextToSpeech tts, ILogger log, bool allowTextTurns = false)
 {
+    /// <summary>Test aid: a hello may carry the transcript as text and skip STT (settings allowTextTurns).</summary>
+    public bool AllowTextTurns => allowTextTurns;
+
     public const int MinAudioMs = 500;
     public const int MaxHistoryTurns = 40;
     public const int TtsSampleRate = 16000;
@@ -131,7 +134,7 @@ public sealed class TurnPipeline(ISpeechToText stt, IReplyModel llm, ITextToSpee
             new ElevenLabsSpeechToText(http, settings.ElevenLabsKey),
             llm,
             new ElevenLabsTextToSpeech(http, settings.ElevenLabsKey, settings.TtsVoiceId),
-            log);
+            log, settings.AllowTextTurns);
     }
 
     /// <summary>The tools Claude may call, built from settings.</summary>
@@ -139,9 +142,15 @@ public sealed class TurnPipeline(ISpeechToText stt, IReplyModel llm, ITextToSpee
     [
         new SearchDocumentsTool(settings.DocumentRoots),
         new ReadDocumentTool(settings.DocumentRoots),
+        new ShowInExplorerTool(settings.DocumentRoots),
+        new OpenFileTool(settings.DocumentRoots),
+        new IsDocumentOpenTool(settings.DocumentRoots),
+        new FocusDocumentTool(settings.DocumentRoots),
+        .. OrganizeStore.CreateTools(settings.DocumentRoots),
+        new TranslateDocumentTool(settings.DocumentRoots, new ClaudeTranslator(settings.AnthropicApiKey, settings.TranslateModel ?? settings.ClaudeModel)),
     ];
 
-    public async Task<TurnResult> RunAsync(byte[] pcm, int sampleRate, ITurnSender sender, CancellationToken ct)
+    public async Task<TurnResult> RunAsync(byte[] pcm, int sampleRate, ITurnSender sender, CancellationToken ct, string? text = null)
     {
         var result = new TurnResult();
         var total = Stopwatch.StartNew();
@@ -151,7 +160,9 @@ public sealed class TurnPipeline(ISpeechToText stt, IReplyModel llm, ITextToSpee
             // 1. STT
             var sw = Stopwatch.StartNew();
             string transcript;
-            if (pcm.Length < sampleRate * 2 * MinAudioMs / 1000)
+            if (allowTextTurns && !string.IsNullOrWhiteSpace(text))
+                transcript = text.Trim();
+            else if (pcm.Length < sampleRate * 2 * MinAudioMs / 1000)
                 transcript = "";
             else
             {
@@ -272,7 +283,9 @@ public sealed class ClaudeReplyModel(string? apiKey, string model, IReadOnlyList
     public const string SystemPrompt =
         "אתה שַׁמָּשׁ, עוזר קולי לאדם מבוגר, איש אקדמיה דובר עברית. ענה תמיד בעברית, במשפט אחד עד שלושה, בשפה מדוברת וברורה. התשובה מוקראת בקול, לכן בלי רשימות, בלי סימני עיצוב, בלי אימוג'י ובלי קישורים. אם לא הבנת, שאל שאלה קצרה. " +
         "אתה רץ על המחשב האישי שלו, שהוא מחשב Windows, ויש לך כלים לחפש ולקרוא את המסמכים שלו. תמיד חפש בכלי לפני שאתה אומר שקובץ קיים או שהוא לא קיים. כשמצאת קובץ, אמור באיזו תיקייה הוא נמצא, לפי שם התיקייה ולא הנתיב המלא. " +
-        "אל תקריא מסמך שלם, סכם אותו במשפט אחד עד שלושה. אם ביקשו ממך משהו שאף כלי עדיין לא יודע לעשות, כמו תרגום, שליחת מייל או הזזת קבצים, אמור את זה בקצרה בעברית.";
+        "אתה יכול גם לפתוח קובץ, להראות אותו בסייר הקבצים, לבדוק אם מסמך פתוח כרגע ולהעביר מסמך פתוח לקדמת המסך. אל תקריא מסמך שלם, סכם אותו במשפט אחד עד שלושה. " +
+        "כשמבקשים לסדר תיקייה, קודם קרא ל-find_duplicates ואז תאר את התוכנית בשלושה משפטים לכל היותר (כמה עותקים של כמה מסמכים ולאן הם יועברו) ושאל אם לבצע. קרא ל-apply_plan רק אחרי שהוא אמר כן בבירור בתור הבא. לעולם אל תמחק קבצים, רק הזז, ואמור שאפשר לבטל. " +
+        "אתה יכול לתרגם מסמך לאנגלית או לעברית; התוצאה נשמרת כקובץ חדש ליד המקור, ואחרי התרגום אמור באיזו תיקייה הקובץ נמצא והצע לפתוח אותו. אם ביקשו ממך משהו שאף כלי עדיין לא יודע לעשות, כמו שליחת מייל, אמור את זה בקצרה בעברית.";
 
     public const int MaxTokens = 1024;
     public const int MaxHistoryTurns = 40;

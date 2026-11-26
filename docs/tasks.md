@@ -52,7 +52,7 @@ Seed data for the VM: ~50 .docx/.pdf in nested folders, a few on the same subjec
 Done when: the right file opens on screen.
 Owner notes (2026-11-27): agreed. Tooling = a document text reader plus the Windows Search index (OS-maintained, never stale; query via the Search.CollatorDSO OLE DB provider), with a slow folder walk as fallback for unindexed locations. Claude keeps no index of its own. Verify on his PC: PDF content indexing and which folders are indexed.
 
-### Translate a document                                status: idea
+### Translate a document                                status: tested-vm
 Ask: "תעביר את המאמר הזה לאנגלית"
 What should happen: take the open or just-found document, translate it, save a new file beside the original with a language suffix, open it.
 Touches: Word, the document's folder.
@@ -63,7 +63,7 @@ Seed data for the VM: a few Hebrew and English articles with headings, footnotes
 Done when: a new .docx exists with the translation and formatting kept.
 Owner notes (2026-11-27): no cloud-side Office exists; do it locally without Word: read the .docx with OpenXML, translate paragraphs with Claude, write back into the same structure (styles, headings, tables, lists), save as a new file, open it in Word. Flip paragraph direction for Hebrew<->English. PDFs come out as a translated .docx. Complex layouts are the hard part; v1 = paragraphs, headings, tables, lists.
 
-### Organise and deduplicate a folder                   status: idea
+### Organise and deduplicate a folder                   status: tested-vm
 Ask: "תסדר לי את התיקייה של המאמרים"
 What should happen: find exact and near duplicates, propose a grouping, ask before moving anything, then move (never delete) into subfolders or a `duplicates` folder.
 Touches: document folders.
@@ -85,7 +85,7 @@ Seed data for the VM: a test mailbox with a handful of Hebrew and English thread
 Done when: a reply arrives at a test address.
 Owner notes (2026-11-27): interesting but low priority (Outlook COM is high complexity). If his mail is Gmail/IMAP the PC can read and send directly without Outlook; only Outlook desktop on Exchange needs COM or Graph. Decide after the environment table is filled.
 
-### Show a file in Explorer                             status: specified
+### Show a file in Explorer                             status: tested-vm
 Ask: "תראה לי איפה הקובץ הזה נמצא", "תפתח לי את התיקייה של הקובץ"
 Also phrased as: "באיזו תיקייה זה?"
 What should happen: run `explorer.exe /select,"<full path>"`, which opens a new Explorer window at the folder with the file selected; say which folder it is in.
@@ -96,7 +96,7 @@ Confirmation needed: none.
 Seed data for the VM: any file.
 Done when: an Explorer window with the file selected is in front.
 
-### Open a file in its program                          status: specified
+### Open a file in its program                          status: tested-vm
 Ask: "תפתח את הקובץ הזה", "תפתח אותו בוורד"
 Also phrased as: "תפתח לי את המכתב"
 What should happen: ShellExecute with the default verb (the file's registered app: Word for .docx, the PDF viewer for .pdf), then confirm aloud. If the file is already open, focus it instead (see "Bring a document to the front").
@@ -107,7 +107,7 @@ Confirmation needed: none.
 Seed data for the VM: a .docx, a .pdf, an .xlsx.
 Done when: the document is open and in front.
 
-### Is a document open?                                 status: specified
+### Is a document open?                                 status: tested-vm
 Ask: "המכתב לעירייה פתוח עכשיו?"
 Also phrased as: "האם הקובץ הזה פתוח?", "אני כבר עובד על המסמך הזה?"
 What should happen: two checks, the first that answers wins. (a) Enumerate top-level windows and match the file name in the title (Word titles are "<name> - Word"). (b) The Windows Restart Manager API (RmStartSession / RmRegisterResources / RmGetList) tells which process holds the file; this works for any app without Office automation. If Word automation is available (depends on the Office edition, see environment table) also check Word's Documents collection by full path. Answer in Hebrew: open in Word / not open.
@@ -118,7 +118,7 @@ Confirmation needed: none.
 Seed data for the VM: one document open in Word, one open in another app (PDF viewer), one closed.
 Done when: correct answer for open, closed, and open-in-another-app cases.
 
-### Bring a document to the front                       status: specified
+### Bring a document to the front                       status: tested-vm
 Ask: "תעביר אותי למסמך של המכתב", "תביא לי את המסמך לקדמה"
 Also phrased as: "תעבור למסמך הפתוח"
 What should happen: find its window (as in "Is a document open?"), restore it if minimized, bring it to the foreground with SetForegroundWindow. Windows refuses focus stealing from a background process, so use the AllowSetForegroundWindow / attach-thread-input or minimize-restore workaround (to be verified on the VM). With Word automation: Documents(path).Activate() plus Application.Activate.

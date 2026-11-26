@@ -2,6 +2,7 @@
 """Plays the phone's role for one conversation turn (docs/link-protocol.md).
 
     client.py ws://host:8777/ input.wav [reply.wav] [--probe] [--fast]
+    client.py ws://host:8777/ [reply.wav] --text "<hebrew>"     (text turn, test aid, no WAV)
 
 Streams the WAV (16 kHz mono 16-bit, resampled if needed) as 100 ms frames at real-time pace
 (or as fast as possible with --fast), sends `end`, prints every text message with a timestamp,
@@ -42,8 +43,8 @@ def load_pcm(path: str) -> bytes:
     return struct.pack(f"<{len(samples)}h", *samples)
 
 
-async def run(url: str, wav_in: str, wav_out: str | None, probe: bool, fast: bool) -> int:
-    pcm = load_pcm(wav_in)
+async def run(url: str, wav_in: str | None, wav_out: str | None, probe: bool, fast: bool, text: str | None = None) -> int:
+    pcm = b"" if text is not None else load_pcm(wav_in)
     frame = RATE * 2 * FRAME_MS // 1000
     t0 = time.monotonic()
 
@@ -55,6 +56,8 @@ async def run(url: str, wav_in: str, wav_out: str | None, probe: bool, fast: boo
     async with websockets.connect(url, max_size=1 << 20) as ws:
         hello = {"type": "hello", "sampleRate": RATE, "device": "pclink-client.py"}
         hello["mode"] = "probe" if probe else "conversation"
+        if text is not None:
+            hello["text"] = text  # needs allowTextTurns on the PC
         await ws.send(json.dumps(hello))
         log(f"sent hello {hello['mode']}, {len(pcm) / RATE / 2:.1f} s of audio")
 
@@ -102,8 +105,18 @@ async def run(url: str, wav_in: str, wav_out: str | None, probe: bool, fast: boo
 
 
 if __name__ == "__main__":
-    args = [a for a in sys.argv[1:] if not a.startswith("--")]
+    argv = sys.argv[1:]
+    text = None
+    if "--text" in argv:
+        i = argv.index("--text")
+        if i + 1 >= len(argv):
+            raise SystemExit(__doc__)
+        text = argv[i + 1]
+        del argv[i:i + 2]
+    args = [a for a in argv if not a.startswith("--")]
+    if text is not None:
+        args.insert(1, None)  # no input WAV
     if len(args) < 2:
         raise SystemExit(__doc__)
     sys.exit(asyncio.run(run(args[0], args[1], args[2] if len(args) > 2 else None,
-                             "--probe" in sys.argv, "--fast" in sys.argv)))
+                             "--probe" in argv, "--fast" in argv, text)))

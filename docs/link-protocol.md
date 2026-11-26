@@ -13,6 +13,12 @@ types are ignored by both sides. The PC is the only side that talks to ElevenLab
 | `end` | – | the user stopped talking (tap again or max duration); no more audio follows |
 | `cancel` | – | the user tapped while the PC was thinking or speaking; the PC stops the pipeline and sends nothing more, then closes |
 
+Test aid, text turns: a conversation `hello` may also carry `"text": "<transcript>"`. When it does AND
+the PC setting `allowTextTurns` is true (config.json key, or `SHAMASH_ALLOW_TEXT_TURNS=1`; default false), the PC
+skips speech-to-text and uses the text as the transcript. The phone then sends `end` as usual (no audio is needed;
+audio frames before `end` are ignored) and the PC answers as in any turn: `transcript` (the given text), `reply`,
+audio, `done`. With the setting off the `text` field is ignored. The phone app never sends it; `tools/pclink/client.py --text` does.
+
 Frames shorter than 12 bytes are ignored. Messages over 1 MB close the socket.
 
 ## PC → phone
