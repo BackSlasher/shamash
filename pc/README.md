@@ -57,6 +57,11 @@ The `vpk` version (`vpk_version` in `build.sh`) must equal the `Velopack` packag
 | `SHAMASH_UPDATE_NOW` | runtime | `1` applies a downloaded update immediately |
 | `SHAMASH_UPDATE_CHECK_MINUTES` | runtime | minutes between update checks, default 360, minimum 1 |
 | `SHAMASH_LINK_PORT` | runtime | phone link probe port, default 8777 |
+| `ELEVENLABS_KEY` | runtime | ElevenLabs API key (conversation STT and TTS) |
+| `ANTHROPIC_API_KEY` | runtime | Anthropic API key (conversation LLM) |
+| `SHAMASH_LLM` | runtime | `claude` (default) or `echo` |
+| `SHAMASH_TTS_VOICE_ID` | runtime | ElevenLabs voice, default `JBFqnCBsd6RMkjVDRZzb` |
+| `SHAMASH_CLAUDE_MODEL` | runtime | default `claude-opus-5-5` |
 
 ## Phone link probe
 
@@ -95,6 +100,36 @@ or per program: `New-NetFirewallRule -DisplayName "Shamash link" -Direction Inbo
 
 Verified on Linux in podman only: the in-process integration test (`ClientWebSocket`: hello, 3 frames, end; 3 acks, summary frames=3 bytes=9600 gaps=0, WAV written). A trimming/single-file `publish` for win-x64 succeeds and `Shamash.Pc.exe` grew to about 104 MB; it also leaves `aspnetcorev2_inprocess.dll` (IIS module, unused) beside the exe.
 
+## Conversation mode
+
+A hello with `"mode":"conversation"` (see `docs/link-protocol.md`) runs one turn per connection after `end`: ElevenLabs batch STT (`scribe_v3`, `heb`, WAV built with `WavWriter`; audio under 0.5 s skips STT and counts as an empty transcript) -> `transcript` -> Claude (`Anthropic` NuGet 13.14.0, non-beta Messages API, `output_config.effort` low, system prompt in `ClaudeReplyModel.SystemPrompt`) -> `reply` -> ElevenLabs streaming TTS (`eleven_v4_turbo`, `pcm_16000`) -> `audio_start`, binary PCM chunks as they arrive (even lengths; an odd trailing byte is carried to the next chunk), `audio_end`, `done`, close. Any failure sends `error` with stage `stt`/`llm`/`tts`/`internal` and closes. `cancel` or a closed socket cancels the pipeline and nothing more is sent. Probe mode (no `mode`, or `probe`) is unchanged.
+
+Settings are loaded once at startup: environment variables win over `%LocalAppData%\Shamash\config.json` (fallback `.\config.json`; first existing file only), camelCase keys:
+
+```json
+{ "elevenLabsKey": "...", "anthropicApiKey": "...", "llm": "claude", "ttsVoiceId": "JBFqnCBsd6RMkjVDRZzb", "claudeModel": "claude-opus-5-5" }
+```
+
+Env names: `ELEVENLABS_KEY`, `ANTHROPIC_API_KEY`, `SHAMASH_LLM`, `SHAMASH_TTS_VOICE_ID`, `SHAMASH_CLAUDE_MODEL`. Key values are never logged, only whether they are present. Without an ElevenLabs key a turn fails with stage `internal`, "no ElevenLabs key configured" (probe mode still works); without an Anthropic key and `llm=claude` it fails with stage `llm`.
+
+`SHAMASH_LLM=echo` makes the reply equal to the transcript, so STT and TTS can be tried without an Anthropic key.
+
+History: one in-memory conversation for the life of the process, user and assistant entries alternating, capped at the last 40 entries (20 exchanges), dropped in pairs. A turn that fails before the reply does not add to it.
+
+Log lines (Information unless noted):
+
+```
+config: elevenLabsKey=true anthropicApiKey=false llm=claude
+turn: transcript N chars in X ms
+turn: reply N chars in X ms
+turn: tts first byte X ms, total Y ms, bytes B
+turn: done total X ms            (or: turn: cancelled at <stage>)
+turn: error at <stage>: <message>   (Warning)
+link: conversation peer=... frames=N bytes=N audio=S.SSs wall=S.SSs
+```
+
+Each turn's audio is written to `%LocalAppData%\Shamash\pclink\pclink-yyyyMMdd-HHmmss.wav` (written at `end`, before the pipeline runs), with `pclink-yyyyMMdd-HHmmss.json` beside it (transcript, reply, timings in ms, TTS bytes, error or cancelledAt, done).
+
 ## Update flow
 
 1. `Shamash.Pc-win-Setup.exe` is a one-click, per-user installer: it installs under `%LocalAppData%\Shamash.Pc` without admin rights or prompts and creates Desktop and Start Menu shortcuts.
@@ -125,6 +160,8 @@ Verified on Linux in podman only: the in-process integration test (`ClientWebSoc
 
 ## Not verified
 
+- Conversation mode has only run against fakes (pipeline, in-process WebSocket, stubbed HTTP handlers); `pc/build.sh test` has 44 tests. Nothing was run against the real ElevenLabs STT/TTS or Anthropic APIs: request shapes (multipart fields, `xi-api-key`, TTS body, `eleven_v4_turbo`, `language_code`) and the Anthropic SDK call (`claude-opus-5-5`, `output_config.effort`) are unconfirmed, as are real latencies and the real error-body formats.
+- The phone side of conversation mode against this server, and conversation mode on Windows.
 - Uninstall, shortcuts, and SmartScreen on a browser-downloaded Setup.exe (the VM copy came over the shared folder).
 - The firewall prompt itself: the rule was added before the service first listened.
 - Why the delta package is not used: Velopack downloaded the full package both times.

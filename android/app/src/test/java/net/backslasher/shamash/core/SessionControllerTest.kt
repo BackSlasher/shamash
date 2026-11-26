@@ -17,6 +17,7 @@ import net.backslasher.shamash.audio.AudioCapture
 import net.backslasher.shamash.audio.Cues
 import net.backslasher.shamash.config.ShamashConfig
 import net.backslasher.shamash.config.TriggerMode
+import net.backslasher.shamash.link.ReplyProvider
 import net.backslasher.shamash.storage.FileSessionStore
 import net.backslasher.shamash.storage.SessionRecord
 import net.backslasher.shamash.transcribe.FakeTranscriber
@@ -61,6 +62,7 @@ class SessionControllerTest {
         val config: ShamashConfig,
         val transcriber: FakeTranscriber = FakeTranscriber(),
         val speaker: Speaker = FakeSpeaker(),
+        val replyProvider: ReplyProvider? = null,
     ) {
         val capture = FakeCapture()
         val cues = FakeCues()
@@ -72,6 +74,7 @@ class SessionControllerTest {
             store = FileSessionStore(dir),
             cues = cues,
             speaker = speaker,
+            replyProvider = replyProvider,
             clock = object : Clock {
                 override fun elapsedMs() = scope.testScheduler.currentTime
                 override fun wallMs() = 1_700_000_000_000L + scope.testScheduler.currentTime
@@ -87,7 +90,114 @@ class SessionControllerTest {
         config: ShamashConfig = ShamashConfig(appVersion = "test"),
         transcriber: FakeTranscriber = FakeTranscriber(),
         speaker: Speaker = FakeSpeaker(),
-    ) = Env(this, File(tmp.root, "recordings"), config, transcriber, speaker)
+        replyProvider: ReplyProvider? = null,
+    ) = Env(this, File(tmp.root, "recordings"), config, transcriber, speaker, replyProvider)
+
+    private class FakeReplyProvider(
+        val replyText: String = "היי, מה נשמע",
+        val replyDelayMs: Long = 1_000,
+        val audioDelayMs: Long = 500,
+        val failWith: Exception? = null,
+    ) : ReplyProvider {
+        var cancelled = false
+        var awaited = 0
+        override suspend fun awaitReply(onReplyText: (String) -> Unit, onSpeakingStarted: () -> Unit) {
+            awaited++
+            delay(replyDelayMs)
+            failWith?.let { throw it }
+            onReplyText(replyText)
+            delay(100)
+            onSpeakingStarted()
+            delay(audioDelayMs)
+        }
+        override fun cancelReply() { cancelled = true }
+    }
+
+    private suspend fun TestScope.listenAndStop(e: Env) {
+        e.controller.onTap()
+        advanceTimeBy(1_500); runCurrent()
+        assertEquals(ShamashState.LISTENING, e.state)
+        e.controller.onTap()
+        advanceTimeBy(1); runCurrent()
+        var guard = 0
+        while (!e.controller.model.value.isFinal && e.state == ShamashState.WORKING && guard++ < 500) {
+            advanceTimeBy(10); runCurrent() // until the transcript is final and the reply wait begins
+        }
+    }
+
+    @Test
+    fun linkTurnPassesWorkingThenSpeakingThenIdleWithReply() = runTest {
+        val rp = FakeReplyProvider()
+        val e = env(replyProvider = rp)
+        listenAndStop(e)
+        assertEquals(ShamashState.WORKING, e.state)
+        assertEquals("שלום, מה שלומך?", e.controller.model.value.transcript)
+        assertTrue(e.controller.model.value.isFinal)
+        advanceTimeBy(1_000); runCurrent()
+        assertEquals(ShamashState.WORKING, e.state)
+        assertEquals("היי, מה נשמע", e.controller.model.value.transcript)
+        advanceTimeBy(200); runCurrent()
+        assertEquals(ShamashState.SPEAKING, e.state)
+        advanceTimeBy(1_000); runCurrent()
+        assertEquals(ShamashState.IDLE, e.state)
+        assertEquals("היי, מה נשמע", e.controller.model.value.transcript)
+        assertFalse(rp.cancelled)
+    }
+
+    @Test
+    fun tapWhileLinkSpeakingCancelsAndGoesIdle() = runTest {
+        val rp = FakeReplyProvider()
+        val e = env(replyProvider = rp)
+        listenAndStop(e)
+        advanceTimeBy(1_200); runCurrent()
+        assertEquals(ShamashState.SPEAKING, e.state)
+        e.controller.onTap()
+        assertEquals(ShamashState.IDLE, e.state)
+        assertTrue(rp.cancelled)
+        assertEquals("היי, מה נשמע", e.controller.model.value.transcript)
+        advanceTimeBy(5_000); runCurrent()
+        assertEquals(ShamashState.IDLE, e.state)
+    }
+
+    @Test
+    fun tapWhileThinkingCancelsReply() = runTest {
+        val rp = FakeReplyProvider()
+        val e = env(replyProvider = rp)
+        listenAndStop(e)
+        assertEquals(ShamashState.WORKING, e.state)
+        e.controller.onTap()
+        assertEquals(ShamashState.IDLE, e.state)
+        assertTrue(rp.cancelled)
+    }
+
+    @Test
+    fun replyExceptionGoesToError() = runTest {
+        val e = env(replyProvider = FakeReplyProvider(failWith = IOException("link dropped")))
+        listenAndStop(e)
+        advanceTimeBy(1_500); runCurrent()
+        assertEquals(ShamashState.ERROR, e.state)
+        assertEquals(ErrorKind.NO_NETWORK, e.controller.model.value.errorKind)
+    }
+
+    @Test
+    fun replyTimeoutGoesToError() = runTest {
+        val rp = FakeReplyProvider(replyDelayMs = 100_000)
+        val e = env(config = ShamashConfig(appVersion = "test", linkReplyTimeoutMs = 5_000), replyProvider = rp)
+        listenAndStop(e)
+        advanceTimeBy(6_000); runCurrent()
+        assertEquals(ShamashState.ERROR, e.state)
+        assertTrue(rp.cancelled)
+    }
+
+    @Test
+    fun blankTranscriptInLinkModeGoesIdleWithoutReply() = runTest {
+        val rp = FakeReplyProvider(replyDelayMs = 10)
+        val e = env(transcriber = FakeTranscriber(batchText = ""), replyProvider = rp)
+        listenAndStop(e)
+        advanceTimeBy(500); runCurrent()
+        assertEquals(ShamashState.IDLE, e.state)
+        assertEquals("", e.controller.model.value.transcript)
+    }
 
     @Test
     fun tapGoesWorkingThenListening_secondTapReturnsToIdleWithBatchText() = runTest {

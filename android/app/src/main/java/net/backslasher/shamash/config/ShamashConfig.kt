@@ -37,6 +37,10 @@ data class ShamashConfig(
     val lockTask: Boolean = false,
     /** True for offline testing (-PfakeTranscriber=true): uses FakeTranscriber instead of ElevenLabs. */
     val useFakeTranscriber: Boolean = BuildConfig.FAKE_TRANSCRIBER,
+    /** Non-null (-PpcLinkUrl=ws://...): link mode, the phone talks to the PC instead of ElevenLabs. */
+    val pcLinkUrl: String? = BuildConfig.PC_LINK_URL.takeIf { it.isNotBlank() },
+    /** Link mode: budget for the whole reply (text plus audio playback) after the transcript. */
+    val linkReplyTimeoutMs: Long = 60_000L,
 ) {
     companion object {
         val DEFAULT = ShamashConfig(appVersion = BuildConfig.VERSION_NAME)

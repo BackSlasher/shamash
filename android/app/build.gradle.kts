@@ -18,6 +18,9 @@ val shamashVersionCode: Int = config("SHAMASH_VERSION_CODE")?.toInt() ?: 1
 // -PfakeTranscriber=true builds an APK that never calls ElevenLabs.
 val fakeTranscriber: Boolean = config("fakeTranscriber")?.toBoolean() ?: false
 
+// -PpcLinkUrl=ws://host:8777/ (or env SHAMASH_PC_LINK_URL) builds "link mode": the phone streams to the PC.
+val pcLinkUrl: String = config("SHAMASH_PC_LINK_URL") ?: config("pcLinkUrl") ?: ""
+
 // ElevenLabs key: environment ELEVENLABS_KEY first, then elevenlabs.key in android/local.properties.
 val elevenLabsKey: String = run {
     val fromEnv = providers.environmentVariable("ELEVENLABS_KEY").orNull?.takeIf { it.isNotBlank() }
@@ -48,6 +51,7 @@ android {
         versionCode = shamashVersionCode
         versionName = shamashVersionName
         buildConfigField("String", "ELEVENLABS_KEY", "\"$elevenLabsKey\"")
+        buildConfigField("String", "PC_LINK_URL", "\"${pcLinkUrl.replace("\\", "\\\\").replace("\"", "\\\"")}\"")
         buildConfigField("boolean", "FAKE_TRANSCRIBER", fakeTranscriber.toString())
     }
 

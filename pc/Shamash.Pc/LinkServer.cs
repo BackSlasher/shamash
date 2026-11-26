@@ -15,13 +15,15 @@ using Microsoft.Extensions.Logging;
 namespace Shamash.Pc;
 
 /// <summary>Phone-link probe server (port of tools/pclink/server.py): Kestrel + WebSocket at "/".</summary>
-public sealed class LinkServer(ILoggerFactory loggerFactory, string url, string outDir) : IAsyncDisposable
+public sealed class LinkServer(ILoggerFactory loggerFactory, string url, string outDir, TurnPipeline? pipeline = null) : IAsyncDisposable
 {
     public const int DefaultPort = 8777;
     public const int MaxMessageBytes = 1 << 20;
 
     private readonly ILogger _log = loggerFactory.CreateLogger<LinkServer>();
     private WebApplication? _app;
+    private readonly Lazy<TurnPipeline> _pipeline = new(() => pipeline ?? TurnPipeline.Create(
+        ShamashSettings.LoadDefault(loggerFactory.CreateLogger<ShamashSettings>()), SharedHttp.Client, loggerFactory));
 
     public static int PortFromEnvironment() =>
         int.TryParse(Environment.GetEnvironmentVariable("SHAMASH_LINK_PORT"), out var p) && p is > 0 and < 65536 ? p : DefaultPort;
@@ -78,6 +80,12 @@ public sealed class LinkServer(ILoggerFactory loggerFactory, string url, string 
         var pcm = new MemoryStream();
         var stats = new LinkSessionStats();
         var buf = new byte[64 * 1024];
+        var conversation = false;
+        var stamp = DateTime.Now;
+        using var turnCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        using var loopCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        Task<TurnResult>? turn = null;
+        TurnResult? turnResult = null;
         try
         {
             while (ws.State == WebSocketState.Open)
@@ -86,7 +94,7 @@ public sealed class LinkServer(ILoggerFactory loggerFactory, string url, string 
                 ValueWebSocketReceiveResult r;
                 do
                 {
-                    r = await ws.ReceiveAsync(buf.AsMemory(), ct);
+                    r = await ws.ReceiveAsync(buf.AsMemory(), loopCts.Token);
                     if (r.MessageType == WebSocketMessageType.Close) goto done;
                     msg.Write(buf, 0, r.Count);
                     if (msg.Length > MaxMessageBytes)
@@ -104,9 +112,37 @@ public sealed class LinkServer(ILoggerFactory loggerFactory, string url, string 
                         if (type == "hello")
                         {
                             if (root!.RootElement.TryGetProperty("sampleRate", out var sr) && sr.TryGetInt32(out var v) && v > 0) rate = v;
+                            conversation = root.RootElement.TryGetProperty("mode", out var mode)
+                                && mode.ValueKind == JsonValueKind.String && mode.GetString() == "conversation";
                             _log.LogInformation("link: hello from {Peer}: {Hello}", peer, Encoding.UTF8.GetString(msg.GetBuffer(), 0, (int)msg.Length));
                         }
-                        else if (type == "end") goto done;
+                        else if (type == "cancel" && conversation)
+                        {
+                            turnCts.Cancel();
+                            if (turn is null) goto done;
+                        }
+                        else if (type == "end")
+                        {
+                            if (!conversation) goto done;
+                            if (turn is null)
+                            {
+                                var sender = new WebSocketSender(ws);
+                                var audio = pcm.ToArray();
+                                SaveWav(audio, rate, stamp);
+                                turn = RunTurnAsync(audio, rate, sender, turnCts.Token, ws, loopCts);
+                            }
+                        }
+                    }
+                    continue;
+                }
+
+                if (conversation)
+                {
+                    // Conversation mode: no acks. Audio after `end` is ignored.
+                    if (turn is null && LinkFrame.TryParse(msg.GetBuffer().AsMemory(0, (int)msg.Length), out var cf))
+                    {
+                        stats.Add(cf.Seq, cf.Pcm.Length, sw.Elapsed.TotalMilliseconds);
+                        pcm.Write(cf.Pcm.Span);
                     }
                     continue;
                 }
@@ -122,6 +158,33 @@ public sealed class LinkServer(ILoggerFactory loggerFactory, string url, string 
         }
         catch (Exception e) when (e is WebSocketException or OperationCanceledException or IOException) { }
         done:
+
+        if (conversation)
+        {
+            // Socket closed or cancelled: stop the pipeline and wait for it to unwind.
+            if (ws.State is not (WebSocketState.Open or WebSocketState.CloseSent)) turnCts.Cancel();
+            else if (turn is null) turnCts.Cancel();
+            if (turn is not null)
+            {
+                try { turnResult = await turn; } catch (Exception e) { _log.LogWarning(e, "turn: pipeline faulted"); }
+            }
+            else
+            {
+                // Closed before `end`: nothing was run; keep whatever audio arrived.
+                SaveWav(pcm.ToArray(), rate, stamp);
+            }
+            try
+            {
+                if (ws.State is WebSocketState.Open or WebSocketState.CloseReceived)
+                    await ws.CloseAsync(WebSocketCloseStatus.NormalClosure, null, CancellationToken.None);
+            }
+            catch (Exception e) when (e is WebSocketException or OperationCanceledException or IOException) { }
+            if (turnResult is not null) SaveTurnJson(turnResult, stamp);
+            _log.LogInformation("link: conversation peer={Peer} frames={Frames} bytes={Bytes} audio={Audio}s wall={Wall}s",
+                peer, stats.Frames, stats.Bytes, stats.AudioSeconds(rate).ToString("F2", CultureInfo.InvariantCulture),
+                sw.Elapsed.TotalSeconds.ToString("F2", CultureInfo.InvariantCulture));
+            return;
+        }
 
         var secs = stats.AudioSeconds(rate);
         try
@@ -156,6 +219,52 @@ public sealed class LinkServer(ILoggerFactory loggerFactory, string url, string 
             sw.Elapsed.TotalSeconds.ToString("F2", CultureInfo.InvariantCulture), stats.Gaps, jit);
     }
 
+    private async Task<TurnResult> RunTurnAsync(byte[] pcm, int rate, ITurnSender sender, CancellationToken ct, WebSocket ws, CancellationTokenSource loopCts)
+    {
+        TurnResult r;
+        try { r = await _pipeline.Value.RunAsync(pcm, rate, sender, ct); }
+        catch (Exception e)
+        {
+            _log.LogError(e, "turn: internal failure");
+            r = new TurnResult { ErrorStage = "internal", ErrorMessage = e.Message };
+            try { await sender.SendTextAsync(TurnJson.Message("error", ("stage", "internal"), ("message", e.Message)), CancellationToken.None); }
+            catch (Exception) { }
+        }
+        // Send our close frame; the receive loop ends when the phone answers (or after a grace period).
+        try
+        {
+            if (ws.State is WebSocketState.Open or WebSocketState.CloseReceived)
+                await ws.CloseOutputAsync(WebSocketCloseStatus.NormalClosure, null, CancellationToken.None);
+        }
+        catch (Exception e) when (e is WebSocketException or OperationCanceledException or IOException) { }
+        loopCts.CancelAfter(TimeSpan.FromSeconds(5));
+        return r;
+    }
+
+    private string TurnBaseName(DateTime stamp) => Path.Combine(outDir, $"pclink-{stamp:yyyyMMdd-HHmmss}");
+
+    private void SaveWav(byte[] pcm, int rate, DateTime stamp)
+    {
+        if (pcm.Length == 0) return;
+        try
+        {
+            Directory.CreateDirectory(outDir);
+            using var fs = File.Create(TurnBaseName(stamp) + ".wav");
+            WavWriter.Write(fs, pcm, rate);
+        }
+        catch (Exception e) { _log.LogWarning(e, "link: could not write WAV to {Dir}", outDir); }
+    }
+
+    private void SaveTurnJson(TurnResult r, DateTime stamp)
+    {
+        try
+        {
+            Directory.CreateDirectory(outDir);
+            File.WriteAllText(TurnBaseName(stamp) + ".json", r.ToJson(), new UTF8Encoding(false));
+        }
+        catch (Exception e) { _log.LogWarning(e, "link: could not write turn JSON to {Dir}", outDir); }
+    }
+
     private static bool TryParseJson(ReadOnlySpan<byte> utf8, out string? type, out JsonDocument? doc)
     {
         type = null; doc = null;
@@ -177,7 +286,11 @@ public sealed class LinkHostedService(ILoggerFactory loggerFactory) : IHostedSer
 
     public async Task StartAsync(CancellationToken ct)
     {
-        _server = new LinkServer(loggerFactory, $"http://0.0.0.0:{LinkServer.PortFromEnvironment()}", LinkServer.DefaultOutDir());
+        var log = loggerFactory.CreateLogger<ShamashSettings>();
+        var settings = ShamashSettings.LoadDefault(log);
+        settings.LogPresence(log);
+        var pipeline = TurnPipeline.Create(settings, SharedHttp.Client, loggerFactory);
+        _server = new LinkServer(loggerFactory, $"http://0.0.0.0:{LinkServer.PortFromEnvironment()}", LinkServer.DefaultOutDir(), pipeline);
         try { await _server.StartAsync(ct); }
         catch (Exception e)
         {
@@ -191,4 +304,20 @@ public sealed class LinkHostedService(ILoggerFactory loggerFactory) : IHostedSer
     {
         if (_server is { } s) { await s.StopAsync(ct); await s.DisposeAsync(); }
     }
+}
+
+/// <summary>One HttpClient for the life of the process (timeouts are per call).</summary>
+public static class SharedHttp
+{
+    public static readonly HttpClient Client = new() { Timeout = Timeout.InfiniteTimeSpan };
+}
+
+/// <summary>Sends pipeline output over the phone's WebSocket.</summary>
+public sealed class WebSocketSender(WebSocket ws) : ITurnSender
+{
+    public Task SendTextAsync(string json, CancellationToken ct) =>
+        ws.SendAsync(Encoding.UTF8.GetBytes(json), WebSocketMessageType.Text, true, ct);
+
+    public Task SendBinaryAsync(ReadOnlyMemory<byte> data, CancellationToken ct) =>
+        ws.SendAsync(data, WebSocketMessageType.Binary, true, ct).AsTask();
 }

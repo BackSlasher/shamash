@@ -24,6 +24,7 @@ import net.backslasher.shamash.audio.Cues
 import net.backslasher.shamash.audio.WavWriter
 import net.backslasher.shamash.config.ShamashConfig
 import net.backslasher.shamash.config.TriggerMode
+import net.backslasher.shamash.link.ReplyProvider
 import net.backslasher.shamash.storage.ConfigInfo
 import net.backslasher.shamash.storage.Latency
 import net.backslasher.shamash.storage.PartialEntry
@@ -50,6 +51,8 @@ class SessionController(
     private val speaker: Speaker = FakeSpeaker(),
     private val clock: Clock = SystemClock,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
+    /** Link mode: plays the PC's reply after the transcript. Null in standalone mode. */
+    private val replyProvider: ReplyProvider? = null,
 ) {
     private val _model = MutableStateFlow(ScreenModel())
     val model: StateFlow<ScreenModel> = _model.asStateFlow()
@@ -58,6 +61,7 @@ class SessionController(
     private var sessionJob: Job? = null
     private var stopSignal: CompletableDeferred<Unit>? = null
     private var speakJob: Job? = null
+    @Volatile private var replyInFlight = false
 
     // ---- input ----
 
@@ -65,6 +69,7 @@ class SessionController(
         if (config.triggerMode == TriggerMode.HOLD) {
             if (_model.value.state == ShamashState.ERROR) clearError()
             if (_model.value.state == ShamashState.SPEAKING) cancelSpeaking()
+            if (_model.value.state == ShamashState.WORKING && replyInFlight) cancelReply()
             return
         }
         when (_model.value.state) {
@@ -72,7 +77,7 @@ class SessionController(
             ShamashState.LISTENING -> stopSignal?.complete(Unit)
             ShamashState.ERROR -> clearError()
             ShamashState.SPEAKING -> cancelSpeaking()
-            ShamashState.WORKING -> Unit // reserved for interruption later
+            ShamashState.WORKING -> if (replyInFlight) cancelReply()
         }
     }
 
@@ -103,7 +108,18 @@ class SessionController(
         }
     }
 
+    private fun cancelReply() {
+        replyInFlight = false
+        replyProvider?.cancelReply()
+        sessionJob?.cancel()
+        setModel(ShamashState.IDLE, lastFinal, lastFinal.isNotEmpty())
+    }
+
     private fun cancelSpeaking() {
+        if (replyInFlight) {
+            cancelReply()
+            return
+        }
         speakJob?.cancel()
         speakJob = null
         setModel(ShamashState.IDLE, lastFinal, lastFinal.isNotEmpty())
@@ -328,9 +344,58 @@ class SessionController(
         val text = batchText
         if (error == null && text != null) {
             lastFinal = text
-            setModel(ShamashState.IDLE, text, isFinal = true)
+            val rp = replyProvider
+            when {
+                rp == null -> setModel(ShamashState.IDLE, text, isFinal = true)
+                text.isBlank() -> drainEmptyTurn(rp)
+                else -> runReply(rp, text)
+            }
         } else {
             fail(error ?: "Unknown error", errorKind)
+        }
+    }
+
+    /** Link mode, nothing heard: the PC sends `done` right away; consume it so the socket closes. */
+    private suspend fun drainEmptyTurn(rp: ReplyProvider) {
+        try {
+            withTimeoutOrNull(5_000) { rp.awaitReply({}, {}) } ?: rp.cancelReply()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+        }
+        setModel(ShamashState.IDLE, "", isFinal = false)
+    }
+
+    /** Link mode: transcript shown, wait for the PC's reply text, then its audio. */
+    private suspend fun runReply(rp: ReplyProvider, transcript: String) {
+        replyInFlight = true
+        setModel(ShamashState.WORKING, transcript, isFinal = true)
+        try {
+            withTimeout(config.linkReplyTimeoutMs) {
+                rp.awaitReply(
+                    onReplyText = { reply ->
+                        if (replyInFlight) {
+                            lastFinal = reply
+                            _model.update { it.copy(transcript = reply, isFinal = true) }
+                        }
+                    },
+                    onSpeakingStarted = {
+                        if (replyInFlight) _model.update { it.copy(state = ShamashState.SPEAKING) }
+                    },
+                )
+            }
+            replyInFlight = false
+            setModel(ShamashState.IDLE, lastFinal, isFinal = lastFinal.isNotEmpty())
+        } catch (e: TimeoutCancellationException) {
+            replyInFlight = false
+            rp.cancelReply()
+            fail("Timed out waiting for the reply (${config.linkReplyTimeoutMs} ms)", ErrorKind.NO_NETWORK)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            replyInFlight = false
+            rp.cancelReply()
+            fail("Reply failed: ${describe(e)}", classify(e))
         }
     }
 
