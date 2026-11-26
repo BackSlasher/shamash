@@ -65,6 +65,28 @@ Existing snapshots:
   8777 firewall rule, no Shamash, no secrets (the `%LocalAppData%\Shamash` config and logs were removed
   before saving; keep it that way, snapshots must never hold `config.json`).
 
+- `win11-seeded` (2026-11-27): `win11-base` plus the `tools/seed-docs` corpus (58 files, Hebrew and English, nested
+  folders, duplicates, modified times over 3 years) in `C:\Users\shamash\Documents` and 5 files on the Desktop.
+  Windows Search had indexed names and (where a filter exists) content within about 5 minutes of the copy and the index
+  survived the snapshot reboot. No Shamash, no `%LocalAppData%\Shamash*`, no velopack folder, no secrets. Regenerate the
+  corpus with the podman command in `tools/seed-docs/gen.py`.
+
+### Windows Search over SSH
+
+`Search.CollatorDSO` works from PowerShell over SSH with `[Console]::OutputEncoding = [Text.Encoding]::UTF8`:
+
+```powershell
+$c = New-Object System.Data.OleDb.OleDbConnection "Provider=Search.CollatorDSO;Extended Properties='Application=Windows';"; $c.Open()
+$cmd = New-Object System.Data.OleDb.OleDbCommand "SELECT TOP 10 System.ItemPathDisplay, System.DateModified FROM SYSTEMINDEX WHERE SCOPE='file:C:\Users\shamash' AND CONTAINS(System.Search.Contents, '""קטלוג""')", $c
+$r = $cmd.ExecuteReader(); while ($r.Read()) { $r[0] }
+```
+
+Findings on this image (no Office): file-name `LIKE '%עירייה%'` works; Hebrew and English content of `.pdf` and `.txt` is
+searched (a UTF-8 `.txt` needs a BOM or its Hebrew is not indexed); `.docx` and `.xlsx` bodies are NOT indexed (no
+PersistentHandler, no OOXML filter without Office), only their names. A word with an apostrophe such as `העות'מאנית` is
+split into `העות` and `מאנית`, so query `CONTAINS(*, '"העות''מאנית"')` or `'מאנית'`, not `'עות''מאנית'` (prefix `ה`
+is part of the token). Right after boot the first query can fail with E_FAIL for under a minute.
+
 Office is not installed. Research 2026-11-26: Microsoft 365 Apps installed without a license run in
 reduced functionality mode (view and print only, sign-in prompt at every launch), with no documented
 grace period, so an unlicensed install is of little use for automation tests; the 30-day Microsoft 365
