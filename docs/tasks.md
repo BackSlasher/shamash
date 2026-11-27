@@ -22,6 +22,7 @@ Status values: `idea`, `specified` (enough detail to build), `tooling` (PC-side 
 | Browser and default apps | ? |
 | Other apps he relies on | ABBYY FineReader, AnyDesk, HP printing/fax, classic Outlook (PSTs, an ISP account) |
 | Who else uses the PC | ? |
+| Phone power (physical) | The Pixel 7 Pro's USB-C port has a weak grip: cables slide out (owner, 2026-11-28). The phone is meant to sit on a stand, always on, screen lit, so a loose cable means a dead phone within a day. Plan: a Qi wireless charging stand (Pixel 7 Pro charges wirelessly; `KioskPolicy` already keeps the screen on for BATTERY_PLUGGED_WIRELESS) or a cradle that clamps the cable; plus a not-charging watchdog in the app (see Tasks). |
 
 ## Task template
 
@@ -158,6 +159,18 @@ Seed data for the VM: a salad folder with ~30 mixed files (some exact copies of 
 Done when: files land in the right folders by voice, copies end up in כפולים, "תחזיר את זה" restores the last file and its copies, a restart resumes where it stopped.
 
 <!-- Add tasks below. Printing, calendar, reading a PDF aloud, summarising a long document, dictating a letter, renaming files, finding a photo... -->
+
+### Warn when the phone stops charging                  status: idea
+Ask (Hebrew, as he would say it): none; this is a background guard, not a request.
+Also phrased as: (the owner asks the PC) "is the phone charging?"
+What should happen: the app watches the battery state; if the phone is unplugged for more than N minutes (say 3) while the assistant is deployed, it shows a large on-screen banner in Hebrew ("הטלפון לא בטעינה, בדוק את הכבל") and says it once aloud; it reports charging state and battery level to the PC in the link hello/heartbeat so the owner can see it in the service log or Status window. Clears itself when power returns.
+Touches: phone BatteryManager, link protocol (status fields), PC status window.
+Must never: nag repeatedly (one spoken warning per outage, banner stays), never dim or sleep the screen as a "saving" measure.
+Spoken result: one Hebrew sentence when charging stops; nothing when it resumes (banner disappears).
+Confirmation needed: none.
+Seed data for the VM: none; test by unplugging the phone.
+Done when: unplugging the phone for N minutes produces the banner and one spoken warning, and the PC log shows "phone not charging, 71%".
+Owner notes (2026-11-28): the Pixel 7 Pro's USB-C port grips weakly and cables slide out; first mitigation is hardware (Qi wireless stand or a cradle that clamps the cable), this task is the software backstop.
 
 ## Findings from the saba inventory (2026-11-27)
 
