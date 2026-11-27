@@ -75,7 +75,7 @@ Done when: no file lost (count before = count after), duplicates grouped.
 Owner notes (2026-11-27): describing a rearrangement by voice is not realistic. Design: he triggers, the agent proposes a plan (spoken 3-sentence summary + plain list on the PC screen), he approves, moves only, never deletes, with a move journal for undo. First slice: deduplication alone.
 Owner notes (2026-11-27, later): the interesting files are .docx; the numerous .doc/.rtf/.pdf are cold storage. The saba consolidation plan is good, but he gave up on presenting it in full for approval, so the end result is Shamash consolidating the "salad" folders (סלט למיון וסידור / לסידור piles) piecemeal, a few files per sitting, with the grandfather saying yes or no by voice (see "Sort a messy folder piecemeal"). He may find an Office ISO for the VM. Guards: `find_duplicates` and the sorting tools refuse a folder with more than 3000 files (`maxOrganizeFiles`); `~$` lock files and `.lnk` shortcuts are skipped everywhere; default document roots stay Desktop and Documents, D: must be added explicitly.
 
-### Help with email                                     status: idea
+### Help with email                                     status: tooling
 Ask: "יש לי מייל חדש?", "תקרא לי את המייל מדני", "תענה לו שאני מסכים"
 What should happen: read recent mail aloud (sender, subject, gist), draft replies, send only after he confirms.
 Touches: his email client / account (see environment).
@@ -85,7 +85,8 @@ Confirmation needed: before sending.
 Seed data for the VM: a test mailbox with a handful of Hebrew and English threads.
 Done when: a reply arrives at a test address.
 Owner notes (2026-11-27): interesting but low priority (Outlook COM is high complexity). If his mail is Gmail/IMAP the PC can read and send directly without Outlook; only Outlook desktop on Exchange needs COM or Graph. Decide after the environment table is filled.
-Design note (2026-11-27): both accounts live in classic Outlook, and the POP3 account's only complete copy may be Outlook's local store, so the tools must drive Outlook itself (COM automation of the running Outlook in his session: enumerate the two stores, read Inbox items, create replies, send). Reading the Gmail account directly over IMAP would cover only half. Outlook's object-model guard may prompt on send or address access unless antivirus is current; verify on his PC. Cannot be tested on the VM without Office/Outlook; a throwaway Microsoft 365 trial or his own licence on the VM is the way to test it. Status stays idea until then.
+Design note (2026-11-27): both accounts live in classic Outlook, and the POP3 account's only complete copy may be Outlook's local store, so the tools must drive Outlook itself (COM automation of the running Outlook in his session: enumerate the two stores, read Inbox items, create replies, send). Reading the Gmail account directly over IMAP would cover only half. Outlook's object-model guard may prompt on send or address access unless antivirus is current; verify on his PC. Cannot be tested on the VM without Office/Outlook; a throwaway Microsoft 365 trial or his own licence on the VM is the way to test it. Status is tooling until then.
+Tooling: `list_mail_accounts`, `list_recent_mail`, `read_mail`, `draft_reply` (saves to Drafts), `send_draft` (only ids made by draft_reply) over Outlook COM in `OutlookTools.cs`; the prompt requires reading the draft back and a yes in the next turn; untested against real Outlook.
 
 ### Show a file in Explorer                             status: tested-vm
 Ask: "תראה לי איפה הקובץ הזה נמצא", "תפתח לי את התיקייה של הקובץ"
@@ -131,7 +132,7 @@ Confirmation needed: none.
 Seed data for the VM: two documents open, the target behind another window and one minimized.
 Done when: the document's window is the active window.
 
-### Close a document                                    status: idea
+### Close a document                                    status: tooling
 Ask: "תסגור את המסמך", "תסגור את המכתב ותשמור"
 Also phrased as: "תסגור בלי לשמור"
 What should happen: needs the Office edition decision. For Word/Excel with automation available: find the document by path and read its Saved flag. If there are unsaved changes ask aloud "יש שינויים שלא נשמרו, לשמור?" and close with SaveChanges accordingly; if no changes, close without asking. Without automation (other apps): only a WM_CLOSE to the window, which lets the app show its own save prompt, and tell him to answer on screen.
@@ -142,6 +143,7 @@ Confirmation needed: before discarding.
 Seed data for the VM: an open dirty document and an open clean one.
 Done when: dirty and clean documents both close correctly.
 Owner environment (2026-11-27): Office 2016 is on his PC, so Word automation is available; blocked only on an Office for the VM.
+Tooling: `close_document` (Word COM by path, Saved flag, save ask/yes/no; WM_CLOSE fallback for other windows); unit-tested only for guards, needs an Office VM or his PC for the real test.
 
 ### Sort a messy folder piecemeal                       status: tested-vm
 Ask: "בוא נסדר את התיקייה סלט"

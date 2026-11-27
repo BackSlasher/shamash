@@ -19,6 +19,29 @@ public static class DocumentReader
     public const int MaxSheetRows = 200;
     public static readonly string[] Supported = [".docx", ".pdf", ".xlsx", ".txt", ".md", ".csv"];
 
+    /// <summary>Formats read_document handles: Supported plus the legacy .doc and .rtf (Word COM first on Windows, then the managed extractor). Search walks and sorting evidence stay on Supported.</summary>
+    public static bool IsReadable(string path) =>
+        IsSupported(path) || Path.GetExtension(path).ToLowerInvariant() is ".doc" or ".rtf";
+
+    /// <summary>Text of a document; .doc and .rtf go through Word on Windows when it is installed, else the managed fallback.</summary>
+    public static string ReadTextPreferWord(string path)
+    {
+        var ext = Path.GetExtension(path).ToLowerInvariant();
+        if (ext is not (".doc" or ".rtf")) return ReadText(path);
+        if (OperatingSystem.IsWindows())
+        {
+            try
+            {
+#pragma warning disable CA1416
+                var viaWord = OfficeCom.RunSta(() => WordAutomation.ReadText(path));
+#pragma warning restore CA1416
+                if (!string.IsNullOrWhiteSpace(viaWord)) return viaWord;
+            }
+            catch (Exception e) when (e is Microsoft.CSharp.RuntimeBinder.RuntimeBinderException or System.Runtime.InteropServices.COMException or TimeoutException) { }
+        }
+        return ext == ".rtf" ? LegacyDocReader.ReadRtf(path) : LegacyDocReader.ReadDoc(path);
+    }
+
     public static bool IsSupported(string path) =>
         Supported.Contains(Path.GetExtension(path), StringComparer.OrdinalIgnoreCase);
 
@@ -169,7 +192,7 @@ public sealed class ReadDocumentTool(IReadOnlyList<string> roots) : IAgentTool
 
     public string Name => "read_document";
     public string Description =>
-        "Reads the text of one document (.docx, .pdf, .xlsx, .txt, .md, .csv) from the user's document folders. " +
+        "Reads the text of one document (.docx, .doc, .rtf, .pdf, .xlsx, .txt, .md, .csv) from the user's document folders. " +
         "path is the full path, or 'folder/name' exactly as search_documents showed it. Long text is cut at max_chars.";
     public string InputSchema => """
         {"type":"object","properties":{"path":{"type":"string","description":"Full path, or folder/name as listed by search_documents"},"max_chars":{"type":"integer","description":"Maximum characters to return, default 6000"}},"required":["path"]}
@@ -185,13 +208,13 @@ public sealed class ReadDocumentTool(IReadOnlyList<string> roots) : IAgentTool
         var full = Resolve(path, roots);
         if (full is null) return "error: path not under a document root";
         if (!File.Exists(full)) return "error: file not found";
-        if (!DocumentReader.IsSupported(full)) return $"error: unsupported file type {Path.GetExtension(full)}";
+        if (!DocumentReader.IsReadable(full)) return $"error: unsupported file type {Path.GetExtension(full)}";
         try
         {
             if (new FileInfo(full).Length > MaxFileBytes) return "error: file too large";
-            return ToolText.Truncate(DocumentReader.ReadText(full), max);
+            return ToolText.Truncate(DocumentReader.ReadTextPreferWord(full), max);
         }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException or InvalidDataException or OpenXmlPackageException or NotSupportedException or ArgumentException)
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or InvalidDataException or OpenXmlPackageException or NotSupportedException or ArgumentException or IndexOutOfRangeException)
         {
             return $"error: could not read file ({e.GetType().Name})";
         }

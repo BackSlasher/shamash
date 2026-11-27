@@ -97,7 +97,7 @@ public sealed class SortStore(string path, OrganizeStore organize, IReadOnlyList
             new SortTool("sort_folder_start",
                 "Starts or resumes a piecemeal sorting session for a messy folder. Returns the session id, counts and the existing destination folders under target_root. " +
                 "Then use sort_folder_next for one file at a time. Refuses folders with too many files.",
-                """{"type":"object","properties":{"folder":{"type":"string","description":"Full path, or folder relative to a document root"},"target_root":{"type":"string","description":"Folder whose sub-folders are the destinations; default the Desktop"}},"required":["folder"]}""",
+                """{"type":"object","properties":{"folder":{"type":"string","description":"Full path, or folder relative to a document root"},"target_root":{"type":"string","description":"Folder whose sub-folders are the destinations: a path, a document root name (Documents, Desktop) or its Hebrew name (מסמכים, שולחן העבודה); default the Desktop"}},"required":["folder"]}""",
                 store.Start),
             new SortTool("sort_folder_next",
                 "Returns the next unsorted file of the session: name, folder, date, size, duplicates, a short text excerpt and evidence from the other folders (identical clones, similar versions, folders with similar content). Describe it in one sentence and propose ONE destination, as a question: clone elsewhere -> כפולים, then the folder of a similar version, then the most similar folder, then a new folder. Calling it again without a decision returns the same file.",
@@ -203,6 +203,23 @@ public sealed class SortStore(string path, OrganizeStore organize, IReadOnlyList
         return System.IO.Path.GetDirectoryName(folder);
     }
 
+    private static readonly Dictionary<string, string> RootAliases = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["מסמכים"] = "Documents", ["שולחן העבודה"] = "Desktop", ["שולחן עבודה"] = "Desktop",
+    };
+
+    /// <summary>target_root as a path, a document root's folder name ("Documents"), its Hebrew display name, or a folder relative to a root; names compare case-insensitively.</summary>
+    public string? ResolveTarget(string arg)
+    {
+        if (!System.IO.Path.IsPathFullyQualified(arg))
+        {
+            var name = RootAliases.TryGetValue(arg, out var alias) ? alias : arg;
+            var root = roots.FirstOrDefault(r => System.IO.Path.GetFileName(System.IO.Path.TrimEndingDirectorySeparator(r)).Equals(name, StringComparison.OrdinalIgnoreCase));
+            if (root is not null) return System.IO.Path.TrimEndingDirectorySeparator(System.IO.Path.GetFullPath(root));
+        }
+        return FindDuplicatesTool.ResolveFolder(roots, arg);
+    }
+
     private static string Rel(string root, string p) => System.IO.Path.GetRelativePath(root, p);
 
     public string Start(JsonElement input)
@@ -216,7 +233,7 @@ public sealed class SortStore(string path, OrganizeStore organize, IReadOnlyList
         var targetArg = ToolText.GetString(input, "target_root");
         if (!string.IsNullOrWhiteSpace(targetArg))
         {
-            target = FindDuplicatesTool.ResolveFolder(roots, targetArg);
+            target = ResolveTarget(targetArg.Trim());
             if (target is null) return "error: target_root not under a document root";
         }
         else target = DefaultTarget(folder);

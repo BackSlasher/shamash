@@ -37,6 +37,10 @@ public static class WindowNative
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern int GetWindowTextW(nint hwnd, StringBuilder sb, int max);
     [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(nint hwnd, out uint pid);
     [DllImport("kernel32.dll")] private static extern uint GetCurrentThreadId();
+    [DllImport("user32.dll")] private static extern bool PostMessageW(nint hwnd, uint msg, nint wParam, nint lParam);
+
+    /// <summary>Posts WM_CLOSE: the app decides, and may show its own "save changes?" prompt.</summary>
+    public static bool RequestClose(nint hwnd) => PostMessageW(hwnd, 0x0010, 0, 0);
 
     private const int SwRestore = 9;
     private const byte VkMenu = 0x12;
