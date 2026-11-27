@@ -224,6 +224,7 @@ public sealed class TurnPipeline(ISpeechToText stt, IReplyModel llm, ITextToSpee
                 await sender.SendTextAsync(TurnJson.Message("done"), ct);
                 result.Done = true;
                 Finish();
+                result.Usage = usage.Total; // the early return skips the assignment after the try block
                 return result;
             }
             stage = "tts";

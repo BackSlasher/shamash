@@ -493,6 +493,16 @@ public class ConversationTests
     }
 
     [Fact]
+    public async Task Turn_NoTts_StillRecordsUsage()
+    {
+        // The noTts early return used to skip the usage assignment, so the heartbeat's "tokens today" stayed empty.
+        var p = new TurnPipeline(Stt("x"), new UsageLlm(), new FakeTts(_ => Chunks(10)), NullLogger.Instance, allowTextTurns: true);
+        var r = await p.RunAsync([], 16000, new RecordingSender(), CancellationToken.None, "hello", noTts: true);
+        Assert.True(r.Done);
+        Assert.Equal(new LlmUsage(3, 18, 100, 100, 31), r.Usage);
+    }
+
+    [Fact]
     public void ClaudeParams_CacheSystemBlockAndLastTool()
     {
         var tools = new IAgentTool[] { new UsageTool(), new UsageTool() };
