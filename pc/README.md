@@ -202,6 +202,21 @@ link: conversation peer=... frames=N bytes=N audio=S.SSs wall=S.SSs
 
 Each turn's audio is written to `%LocalAppData%\Shamash\pclink\pclink-yyyyMMdd-HHmmss.wav` (written at `end`, before the pipeline runs), with `pclink-yyyyMMdd-HHmmss.json` beside it (transcript, reply, timings in ms, TTS bytes, error or cancelledAt, done).
 
+## Home link
+
+Optional "dial home" link to the owner's home server, see `docs/home-protocol.md` (slice 1: registration and heartbeat). Off unless `homeUrl` is set.
+
+| config.json key | env | meaning |
+|---|---|---|
+| `homeUrl` | `SHAMASH_HOME_URL` | server base URL; empty disables the link |
+| `homeEnrolToken` | `SHAMASH_HOME_ENROL_TOKEN` | shared token, used only to register; never logged |
+| `homeHeartbeatMinutes` | `SHAMASH_HOME_HEARTBEAT_MINUTES` | heartbeat interval, default 5 |
+
+- Key: an ECDSA P-256 key is created on first run at `%LocalAppData%\Shamash\home-key.pem` (PKCS#8 PEM). On Windows the file gets an ACL for the current user only (best effort; the default ACL of the folder is already user, SYSTEM and administrators); on Linux mode 0600. The private key never leaves the PC.
+- Registration: when no `%LocalAppData%\Shamash\home-client.json` exists, `POST /api/register` sends the enrolment token, the public key (SubjectPublicKeyInfo PEM), the machine name and the service version; the returned `clientId` is stored in `home-client.json`. A `401` on a heartbeat deletes it and registers again once.
+- Heartbeat: right after startup and then every `homeHeartbeatMinutes`, signed (`X-Shamash-Client`, `-Timestamp`, `-Signature`). Sent: version, uptime, health, last turn time, turns today, token usage today (resets at local midnight), last turn error, machine name, OS description and whether Word is registered; `phone` is `null` for now. The reply's `desiredVersion` and `hold` are kept in the status window ("Home:" line) for update steering (not acted on yet).
+- Failures are retried with backoff (30 s doubling to 30 min) and logged once per ok/failed change; the link never blocks or fails a voice turn.
+
 ## Update flow
 
 1. `Shamash.Pc-win-Setup.exe` is a one-click, per-user installer: it installs under `%LocalAppData%\Shamash.Pc` without admin rights or prompts and creates Desktop and Start Menu shortcuts. Since 0.1.7 the Velopack after-install hook (`StartupTask.cs`) also registers a logon scheduled task "Shamash.Pc" for the installing user (no execution time limit, least privilege, runs the stub from the install root) and starts it; the before-uninstall hook deletes the task. Hooks log to `%LocalAppData%\Shamash\logs\install.log`. The app holds a per-user named mutex, so a second start (installer plus task, or a task start during an update restart) exits at once.

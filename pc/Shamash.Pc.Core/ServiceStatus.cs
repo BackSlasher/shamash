@@ -29,6 +29,33 @@ public sealed class ServiceStatus
     public string? PendingUpdateVersion { get; private set; }
     public bool ApplyNowRequested { get; private set; }
 
+    // Per-day counters (local midnight reset) for the home heartbeat.
+    public int TurnsToday { get { lock (_lock) { RollDay(); return _turnsToday; } } }
+    public LlmUsage UsageToday { get { lock (_lock) { RollDay(); return _usageToday; } } }
+    private int _turnsToday;
+    private LlmUsage _usageToday = LlmUsage.Zero;
+    private DateOnly _day = DateOnly.FromDateTime(DateTime.Now);
+
+    public sealed record ErrorInfo(DateTime At, string Stage, string Message);
+    public ErrorInfo? LastError { get; private set; }
+
+    // Home link (docs/home-protocol.md): last server reply, for the status window and update steering.
+    public DateTime? HomeLastContact { get; private set; }
+    public string? HomeDesiredVersion { get; private set; }
+    public bool HomeHold { get; private set; }
+
+    public void HomeReply(string? desiredVersion, bool hold)
+    {
+        lock (_lock) { HomeLastContact = DateTime.Now; HomeDesiredVersion = desiredVersion; HomeHold = hold; }
+    }
+
+    private void RollDay()
+    {
+        var today = DateOnly.FromDateTime(DateTime.Now);
+        if (today == _day) return;
+        _day = today; _turnsToday = 0; _usageToday = LlmUsage.Zero;
+    }
+
     public enum Health { Starting, Idle, Busy, Error }
 
     public Health Overall
@@ -66,6 +93,13 @@ public sealed class ServiceStatus
         {
             ActiveTurns = Math.Max(0, ActiveTurns - 1);
             LastTurnAt = DateTime.Now;
+            RollDay();
+            if (r is not null)
+            {
+                _turnsToday++;
+                _usageToday += r.Usage;
+                if (r.ErrorStage is not null) LastError = new ErrorInfo(DateTime.Now, r.ErrorStage, Clip(r.ErrorMessage, 300));
+            }
             if (r is null) { LastTurnSummary = "closed before end"; LastTurnFailed = false; return; }
             LastTurnFailed = r.ErrorStage is not null;
             LastTurnSummary = r.ErrorStage is not null

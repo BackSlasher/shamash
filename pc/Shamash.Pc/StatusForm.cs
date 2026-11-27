@@ -64,6 +64,7 @@ internal sealed class StatusForm : Form
         sb.AppendLine($"Last turn: {(s.LastTurnAt is { } t ? t.ToString("HH:mm:ss") : "none")} {s.LastTurnSummary}");
         sb.AppendLine($"Last update check: {(s.LastUpdateCheck is { } u ? u.ToString("yyyy-MM-dd HH:mm:ss") : "never")}; {s.UpdateState}"
             + (s.PendingUpdateVersion is { } p ? $"; pending {p}" : ""));
+        sb.AppendLine($"Home: {(s.HomeLastContact is { } h ? h.ToString("HH:mm:ss") : "no contact")}; desired {s.HomeDesiredVersion ?? "-"}{(s.HomeHold ? ", HOLD" : "")}");
         return sb.ToString().TrimEnd();
     }
 

@@ -55,6 +55,7 @@ internal static class Program
             builder.Services.AddHostedService<UpdateService>();
             builder.Services.AddHostedService<HeartbeatService>();
             builder.Services.AddHostedService<LinkHostedService>();
+            builder.Services.AddHostedService<HomeLinkService>();
             using var host = builder.Build();
             host.Start();
 

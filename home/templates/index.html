@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Shamash home</title>
+<style>
+body{font-family:system-ui,sans-serif;margin:0 auto;max-width:60rem;padding:0 1rem;line-height:1.4}
+section{border:1px solid #8885;border-radius:8px;padding:.5rem 1rem;margin:1rem 0}
+.revoked{opacity:.5}
+dl{display:grid;grid-template-columns:max-content 1fr;gap:.2rem 1rem;margin:.5rem 0}
+dt{color:#888}dd{margin:0;word-break:break-word}
+table{border-collapse:collapse;width:100%;font-size:.85rem;display:block;overflow-x:auto}
+td,th{padding:.15rem .5rem;text-align:left;white-space:nowrap}
+.err{color:#c00}
+button{padding:.4rem .8rem}
+</style></head><body>
+<h1>Shamash home</h1>
+<section>
+<h2>Update steering</h2>
+<form method="post" action="/settings">
+<label>Desired version <input name="desiredVersion" value="{{ desired }}" placeholder="none"></label>
+<label><input type="checkbox" name="hold" value="1" {% if hold %}checked{% endif %}> Hold (no installs)</label>
+<button type="submit">Save</button>
+</form>
+</section>
+{% for c in clients %}
+{% set r = c.row %}{% set l = c.last %}
+<section class="{{ 'revoked' if r['revoked'] }}">
+<h2>{{ r['name'] }}{% if r['revoked'] %} (revoked){% endif %}</h2>
+<dl>
+<dt>Id</dt><dd>{{ r['id'] }}</dd>
+<dt>Last seen</dt><dd>{{ c.seen }}</dd>
+<dt>Version</dt><dd>{{ r['last_version'] or '-' }}</dd>
+<dt>Health</dt><dd>{{ l.get('health', '-') }}</dd>
+<dt>Uptime</dt><dd>{{ c.uptime }}</dd>
+<dt>Last turn</dt><dd>{{ c.last_turn }}</dd>
+<dt>Turns today</dt><dd>{{ l.get('turnsToday', '-') }}</dd>
+<dt>Tokens today</dt><dd>{% if c.usage %}{{ c.usage.get('calls', 0) }} calls; in {{ c.usage.get('input', 0) }}, cache read {{ c.usage.get('cacheRead', 0) }}, cache write {{ c.usage.get('cacheWrite', 0) }}, out {{ c.usage.get('output', 0) }}; est. ${{ '%.2f' % c.cost }}{% else %}-{% endif %}</dd>
+<dt>Last error</dt><dd>{% if l.get('lastError') %}<span class="err">{{ l.lastError.get('at') }} [{{ l.lastError.get('stage') }}] {{ l.lastError.get('message') }}</span>{% else %}none{% endif %}</dd>
+{% if l.get('phone') %}<dt>Phone</dt><dd>{{ l.phone.get('battery', '?') }}%{% if l.phone.get('charging') %}, charging{% else %}, not charging{% endif %}; seen {{ relative(l.phone.get('lastSeenAt')) }}</dd>{% endif %}
+{% if l.get('machine') %}<dt>Machine</dt><dd>{{ l.machine.get('os', '-') }}; Office {{ 'yes' if l.machine.get('officeInstalled') else 'no' }}; index {{ 'ok' if l.machine.get('indexOk') else 'not ok' }}</dd>{% endif %}
+</dl>
+<details><summary>Last {{ c.heartbeats|length }} heartbeats</summary>
+<table><tr><th>At</th><th>Version</th><th>Health</th><th>Turns</th><th>Uptime</th><th>Error</th></tr>
+{% for h in c.heartbeats %}<tr><td>{{ h.at }}</td><td>{{ h.data.get('version', '-') }}</td><td>{{ h.data.get('health', '-') }}</td><td>{{ h.data.get('turnsToday', '-') }}</td><td>{{ duration(h.data.get('uptimeSeconds')) }}</td><td>{{ (h.data.get('lastError') or {}).get('message', '') }}</td></tr>{% endfor %}
+</table></details>
+{% if not r['revoked'] %}
+<form method="post" action="/clients/{{ r['id'] }}/revoke" onsubmit="return confirm('Revoke {{ r['name']|e }}?')"><button type="submit">Revoke</button></form>
+{% endif %}
+</section>
+{% else %}<p>No clients registered yet.</p>{% endfor %}
+<p><small>Cost rates (USD/MTok): {% for k, v in rates.items() %}{{ k }} {{ v }}{% if not loop.last %}, {% endif %}{% endfor %}</small></p>
+</body></html>

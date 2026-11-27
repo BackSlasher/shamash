@@ -8,8 +8,12 @@
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 setup="${1:?Setup.exe path}"; shift || true
-expect=""
-while [ $# -gt 0 ]; do case "$1" in --expect-version) expect="$2"; shift 2;; *) echo "unknown arg $1" >&2; exit 2;; esac; done
+expect=""; home_url=""; home_token=""
+while [ $# -gt 0 ]; do case "$1" in
+  --expect-version) expect="$2"; shift 2;;
+  --home-url) home_url="$2"; shift 2;;        # optional: home link (docs/home-protocol.md), e.g. http://<host ip>:8000
+  --home-token) home_token="$2"; shift 2;;    # optional: the enrolment token (never printed)
+  *) echo "unknown arg $1" >&2; exit 2;; esac; done
 vm_dir="$HOME/vm/shamash-win11"
 ssh=tools/winvm/ssh.sh
 
@@ -22,9 +26,11 @@ done
 
 echo "config"
 python3 tools/pc-config.py "$vm_dir/shared/config.json" --llm claude >/dev/null
-python3 - "$vm_dir/shared/config.json" <<'EOF'
-import json, sys
+HOME_URL="$home_url" HOME_TOKEN="$home_token" python3 - "$vm_dir/shared/config.json" <<'EOF'
+import json, os, sys
 p = sys.argv[1]; c = json.load(open(p, encoding="utf-8")); c["allowTextTurns"] = True
+if os.environ.get("HOME_URL"): c["homeUrl"] = os.environ["HOME_URL"]
+if os.environ.get("HOME_TOKEN"): c["homeEnrolToken"] = os.environ["HOME_TOKEN"]
 json.dump(c, open(p, "w", encoding="utf-8"), indent=2)
 EOF
 "$ssh" 'New-Item -ItemType Directory -Force "$env:LOCALAPPDATA\Shamash" | Out-Null; Copy-Item \\host.lan\Data\config.json "$env:LOCALAPPDATA\Shamash\config.json" -Force; "config copied"' | tail -1

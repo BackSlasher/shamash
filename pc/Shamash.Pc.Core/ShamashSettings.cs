@@ -27,6 +27,15 @@ public sealed record ShamashSettings(
     /// <summary>Model for translate_document; null means the chat model. Env SHAMASH_TRANSLATE_MODEL, config key translateModel.</summary>
     public string? TranslateModel { get; init; }
 
+    /// <summary>Home server base URL (docs/home-protocol.md); empty disables the home link. Env SHAMASH_HOME_URL, config key homeUrl.</summary>
+    public string? HomeUrl { get; init; }
+
+    /// <summary>Shared enrolment token, only used to register. Never logged. Env SHAMASH_HOME_ENROL_TOKEN, config key homeEnrolToken.</summary>
+    public string? HomeEnrolToken { get; init; }
+
+    /// <summary>Minutes between home heartbeats, default 5. Env SHAMASH_HOME_HEARTBEAT_MINUTES, config key homeHeartbeatMinutes.</summary>
+    public int HomeHeartbeatMinutes { get; init; } = 5;
+
     /// <summary>Test aid: allow a conversation hello to carry "text" instead of audio. Default false.</summary>
     public bool AllowTextTurns { get; init; }
 
@@ -85,6 +94,9 @@ public sealed record ShamashSettings(
             DocumentRoots = PickRoots(getEnv("SHAMASH_DOCUMENT_ROOTS"), file),
             TranslateModel = Pick("SHAMASH_TRANSLATE_MODEL", "translateModel"),
             MaxOrganizeFiles = int.TryParse(Pick("SHAMASH_MAX_ORGANIZE_FILES", "maxOrganizeFiles"), out var mo) && mo > 0 ? mo : DefaultMaxOrganizeFiles,
+            HomeUrl = Pick("SHAMASH_HOME_URL", "homeUrl"),
+            HomeEnrolToken = Pick("SHAMASH_HOME_ENROL_TOKEN", "homeEnrolToken"),
+            HomeHeartbeatMinutes = int.TryParse(Pick("SHAMASH_HOME_HEARTBEAT_MINUTES", "homeHeartbeatMinutes"), out var hb) && hb > 0 ? hb : 5,
             AllowTextTurns = PickBool(getEnv("SHAMASH_ALLOW_TEXT_TURNS"), file, "allowTextTurns"),
         };
         doc?.Dispose();

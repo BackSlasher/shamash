@@ -1,0 +1,53 @@
+name: home-image
+
+on:
+  push:
+    branches: [main]
+    paths: ["home/**", ".github/workflows/home-image.yml"]
+
+env:
+  # GHCR rejects uppercase repository names, so this is hardcoded lowercase.
+  IMAGE_NAME: ghcr.io/backslasher/shamash-home
+
+jobs:
+  image:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - run: pip install -r home/requirements-dev.txt && python -m pytest home/tests
+        env:
+          PYTHONPATH: home
+
+      - uses: docker/setup-buildx-action@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Derive tags and labels
+        id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ${{ env.IMAGE_NAME }}
+          tags: |
+            type=raw,value=latest
+            type=sha,format=short
+
+      - name: Build and push
+        uses: docker/build-push-action@v7
+        with:
+          context: home
+          file: home/Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
