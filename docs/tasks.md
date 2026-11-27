@@ -286,7 +286,7 @@ Owner note (2026-11-28): the agent session left Word open with the recovery pane
 
 ### Phone feedback and test tooling
 
-### Phone: show what is happening                       status: idea
+### Phone: show what is happening                       status: built (owner to check the screen)
 Ask (Hebrew, as he would say it): none; this is app behaviour, not a request.
 What should happen: show the transcript and the reply text on screen when the PC sends them (the protocol already carries both), a microphone level meter while listening, and the hint "לחץ שוב כשסיימת" on the red screen. Partials stay off.
 Touches: the phone app UI, link protocol (read only).
@@ -297,7 +297,7 @@ Seed data for the VM: none; test on the phone against the PC service.
 Done when: a link-mode turn shows his words and the reply on screen, the meter moves while he speaks, and the hint is visible on the red screen.
 Owner note (2026-11-28): link mode lost the live words of the phone-only POC and that confused him.
 
-### Regression harness for Office tools                 status: idea
+### Regression harness for Office tools                 status: tested-vm
 Ask (Hebrew, as he would say it): none; this is test tooling.
 What should happen: the three items of the editing design note: (1) a direct tool-invocation harness on the VM (one tool, one JSON input, assert the exact result and the file/Office state, no model); (2) a scenario suite replaying the owner's phone session of 2026-11-28 as text turns, asserting tool sequences and end state, not wording; (3) the model version pinned and bumped deliberately.
 Touches: the win11-office VM, `tools/winvm/`, the PC service.

@@ -75,7 +75,7 @@ The `vpk` version (`vpk_version` in `build.sh`) must equal the `Velopack` packag
 
 With `llm=claude` the reply model runs a tool loop (`ToolLoop`, `ClaudeReplyModel`): the tools are sent with each Messages call; on `tool_use` blocks every tool runs, the assistant content and one `tool_result` block per call go back, and it repeats for at most 8 rounds, after which a last call with `tool_choice` none forces a text answer. Tool errors reach the model as text starting `error:` and are never thrown. Each call (name, compact input, ms, result length) is saved in the turn JSON under `toolCalls` and the "turn: reply" log line and the status window show the count. `echo` mode has no tools.
 
-Prompt caching: the system prompt (a text block) and the last tool definition carry `cache_control: ephemeral`, so the whole tool array plus the system prompt, identical on every call, is a cached prefix (request order is tools, system, messages). Token usage of every model call in a turn, including `translate_document`'s own calls, is summed (a per-turn `UsageScope` in an AsyncLocal) and logged as `llm usage: calls=N input=… cacheWrite=… cacheRead=… output=…`; the same numbers are saved in the turn JSON under `usage` (`calls`, `input`, `cacheWrite`, `cacheRead`, `output`). `input` counts only uncached input tokens.
+Prompt caching: the system prompt (a text block) and the last tool definition carry `cache_control: ephemeral`, so the whole tool array plus the system prompt, identical on every call, is a cached prefix (request order is tools, system, messages). Token usage of every model call in a turn, including `translate_document`'s own calls, is summed (a per-turn `UsageScope` in an AsyncLocal) and logged as `llm usage: calls=N input=… cacheWrite=… cacheRead=… output=…`; the same numbers are saved in the turn JSON under `usage` (`calls`, `input`, `cacheWrite`, `cacheRead`, `output`). `input` counts only uncached input tokens. Measured on the win11-office VM (0.1.16, 2026-11-27 12:03): a 3-call turn read 18,042 tokens from cache and paid for 2,614 fresh input and 224 output tokens; a 4-call turn 24,056 cached / 1,675 fresh / 533 output. The cached prefix (prompt plus 23 tool definitions) is about 6,000 tokens, so a typical turn costs about two cents on Opus 5.5.
 
 | Tool | Input | Result |
 |---|---|---|
@@ -316,6 +316,8 @@ Turn times with one tool call were 3-8 s; the translation turn 11 s.
 ## Regression suite
 
 `tools/winvm/scenarios/` replays phone-session scenarios (find/open/close, translate, mail listing, duplicates ask/yes/undo, index down, same-name identity, dialog) as text turns on the win11-office VM and asserts tool sequences, result prefixes and end state, never wording. Run `tools/winvm/scenarios/run.sh [--restore] [--install <Setup.exe>] [--only <name>]` after deploying `config.json`; see its README. The per-turn JSON carries `resultPrefix` (first 80 characters of each tool result) for these checks.
+
+First full run (2026-11-27 12:00, 0.1.16 installed by the runner, version read back from the log): 8/8 scenarios passed. The run before it (0.1.15 build still at 0.1.14 because the old install step silently did nothing, and no history reset) failed 3: two on a missing `resultPrefix` field, one because the model refused to redo a dedup plan it had just been told "no" about in the previous scenario. Both runner defects are fixed.
 
 ## Not verified
 
