@@ -272,6 +272,18 @@ Owner inbox (2026-11-28): "Copy the paragraph so and so from document so and so 
 
 Design note (2026-11-28, owner + Fable): all editing goes through predefined tools with fixed contracts, never free-form COM scripting by the model (blast radius on his real files and mail, testability, latency, untrusted document text). Every mutating tool acts only on the ActiveDocument identified by full path, takes a backup before the first edit, is undoable, and reads back dictated text before inserting. Regression protection before any of these ships: (1) a direct tool-invocation harness on the VM (run one tool with a JSON input, assert the exact result and the file/Office state, no model), (2) a scenario suite replaying the owner's phone session of 2026-11-28 as text turns asserting tool sequences and end state, not wording, (3) the model version pinned and bumped deliberately.
 
+### Word's Document Recovery pane                       status: idea
+Ask (Hebrew, as he would say it): none; Shamash notices it. He may say "וורד מראה משהו משמאל".
+Also phrased as: "מה זה החלון הזה בוורד?"
+What should happen: after a Word crash or power loss, Word opens with the "Document Recovery" pane listing autosaved files; it blocks nothing, but it confuses him and sits there until clicked. Detection, two independent signals: (a) AutoRecover files present (`Application.Options.DefaultFilePath(wdAutoRecoverPath)`, `*.asd`, with their modified times); (b) the pane itself, through the UI Automation tree of the Word window (name "Document Recovery"; the dialog probe does not see it because it is a task pane, not a `#32770` dialog). When seen, the first Word-related reply of the session adds: "וורד מציע לשחזר קובץ ששמרת אוטומטית (X מאתמול). לפתוח את הגרסה המשוחזרת, או לסגור את ההצעה?" On "לפתוח": open the .asd (`Documents.Open`) as a new document next to the original and say both are open; on "לסגור": close the pane (UI Automation Close button, or `CommandBars.ExecuteMso("DocumentRecoveryClose")` if it exists; verify on the VM) and leave the .asd alone. Never delete .asd files.
+Touches: the running Word, the AutoRecover folder (read).
+Must never: delete or overwrite a recovered or original file; dismiss the pane without asking.
+Spoken result: the question above, then "פתחתי את הגרסה המשוחזרת" or "סגרתי את ההצעה, הקובץ המשוחזר נשאר במקום".
+Confirmation needed: before acting (either choice is his).
+Seed data for the VM: kill WINWORD with a modified unsaved document open, then start Word; the pane appears. Test tooling must stop using Stop-Process on Word for cleanup (use `Application.Quit(SaveChanges:=0)`), so snapshots and runs do not carry this pane by accident.
+Done when: with the pane up, the reply mentions it; "לסגור" removes it and the .asd survives; "לפתוח" opens the recovered copy without touching the original.
+Owner note (2026-11-28): the agent session left Word open with the recovery pane; special-case it ("you have files pending, should we recover them?").
+
 ### Phone feedback and test tooling
 
 ### Phone: show what is happening                       status: idea
