@@ -86,6 +86,7 @@ class MainActivity : ComponentActivity() {
         setContent {
             BackHandler { } // absorb the back gesture
             val model by controller.model.collectAsStateWithLifecycle()
+            val levelState = controller.level.collectAsStateWithLifecycle()
             val shown = if (micGranted) {
                 model
             } else {
@@ -101,6 +102,7 @@ class MainActivity : ComponentActivity() {
                 },
                 onPressDown = { if (micGranted) controller.onPressDown() },
                 onPressUp = { if (micGranted) controller.onPressUp() },
+                level = { levelState.value },
                 maintenance = maintenance,
                 onMaintenanceUnlock = {
                     maintenanceUnlocked = true

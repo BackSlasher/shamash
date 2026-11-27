@@ -39,10 +39,11 @@ class SessionControllerTest {
     private class FakeCapture : AudioCapture {
         @Volatile var running = false
         var chunks = 0
+        @Volatile var hiByte: Int = 0 // sample amplitude of the emitted chunks (0 = silence)
         override fun start(): Flow<ByteArray> = flow {
             running = true
             while (running) {
-                emit(ByteArray(3200))
+                emit(ByteArray(3200) { i -> if (i % 2 == 1) hiByte.toByte() else 0 })
                 chunks++
                 delay(100)
             }
@@ -133,15 +134,44 @@ class SessionControllerTest {
         assertEquals(ShamashState.WORKING, e.state)
         assertEquals("שלום, מה שלומך?", e.controller.model.value.transcript)
         assertTrue(e.controller.model.value.isFinal)
+        assertEquals("", e.controller.model.value.reply)
         advanceTimeBy(1_000); runCurrent()
         assertEquals(ShamashState.WORKING, e.state)
-        assertEquals("היי, מה נשמע", e.controller.model.value.transcript)
+        assertEquals("שלום, מה שלומך?", e.controller.model.value.transcript) // still on screen
+        assertEquals("היי, מה נשמע", e.controller.model.value.reply)
         advanceTimeBy(200); runCurrent()
         assertEquals(ShamashState.SPEAKING, e.state)
         advanceTimeBy(1_000); runCurrent()
         assertEquals(ShamashState.IDLE, e.state)
-        assertEquals("היי, מה נשמע", e.controller.model.value.transcript)
+        assertEquals("שלום, מה שלומך?", e.controller.model.value.transcript)
+        assertEquals("היי, מה נשמע", e.controller.model.value.reply)
         assertFalse(rp.cancelled)
+    }
+
+    @Test
+    fun nextListeningClearsTranscriptAndReply() = runTest {
+        val e = env(replyProvider = FakeReplyProvider())
+        listenAndStop(e)
+        advanceTimeBy(2_500); runCurrent()
+        assertEquals(ShamashState.IDLE, e.state)
+        e.controller.onTap()
+        assertEquals("", e.controller.model.value.transcript)
+        assertEquals("", e.controller.model.value.reply)
+    }
+
+    @Test
+    fun levelMovesWhileListeningAndIsZeroOtherwise() = runTest {
+        val e = env()
+        assertEquals(0f, e.controller.level.value)
+        e.controller.onTap()
+        advanceTimeBy(1_500); runCurrent()
+        assertEquals(ShamashState.LISTENING, e.state)
+        e.capture.hiByte = 0x20
+        advanceTimeBy(300); runCurrent()
+        assertTrue(e.controller.level.value > 0.3f)
+        e.controller.onTap()
+        advanceTimeBy(1); runCurrent()
+        assertEquals(0f, e.controller.level.value)
     }
 
     @Test
@@ -154,7 +184,8 @@ class SessionControllerTest {
         e.controller.onTap()
         assertEquals(ShamashState.IDLE, e.state)
         assertTrue(rp.cancelled)
-        assertEquals("היי, מה נשמע", e.controller.model.value.transcript)
+        assertEquals("שלום, מה שלומך?", e.controller.model.value.transcript)
+        assertEquals("היי, מה נשמע", e.controller.model.value.reply)
         advanceTimeBy(5_000); runCurrent()
         assertEquals(ShamashState.IDLE, e.state)
     }

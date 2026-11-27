@@ -20,6 +20,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withTimeoutOrNull
 import net.backslasher.shamash.audio.AudioCapture
+import net.backslasher.shamash.audio.AudioLevelMeter
 import net.backslasher.shamash.audio.Cues
 import net.backslasher.shamash.audio.WavWriter
 import net.backslasher.shamash.config.ShamashConfig
@@ -57,7 +58,14 @@ class SessionController(
     private val _model = MutableStateFlow(ScreenModel())
     val model: StateFlow<ScreenModel> = _model.asStateFlow()
 
+    private val _level = MutableStateFlow(0f)
+
+    /** Microphone level 0..1 (log scale, smoothed). Moves only while capture runs; 0 otherwise. */
+    val level: StateFlow<Float> = _level.asStateFlow()
+    private val meter = AudioLevelMeter()
+
     private var lastFinal = ""
+    private var lastReply = ""
     private var sessionJob: Job? = null
     private var stopSignal: CompletableDeferred<Unit>? = null
     private var speakJob: Job? = null
@@ -95,6 +103,7 @@ class SessionController(
     fun speak(text: String) {
         if (_model.value.state != ShamashState.IDLE || text.isBlank()) return
         lastFinal = text
+        lastReply = ""
         setModel(ShamashState.SPEAKING, text, isFinal = true)
         speakJob = scope.launch {
             try {
@@ -112,7 +121,7 @@ class SessionController(
         replyInFlight = false
         replyProvider?.cancelReply()
         sessionJob?.cancel()
-        setModel(ShamashState.IDLE, lastFinal, lastFinal.isNotEmpty())
+        _model.value = idleModel()
     }
 
     private fun cancelSpeaking() {
@@ -122,7 +131,7 @@ class SessionController(
         }
         speakJob?.cancel()
         speakJob = null
-        setModel(ShamashState.IDLE, lastFinal, lastFinal.isNotEmpty())
+        _model.value = idleModel()
     }
 
     fun onPressUp() {
@@ -133,8 +142,10 @@ class SessionController(
     // ---- state helpers ----
 
     private fun clearError() {
-        _model.value = ScreenModel(ShamashState.IDLE, lastFinal, lastFinal.isNotEmpty())
+        _model.value = idleModel()
     }
+
+    private fun idleModel() = ScreenModel(ShamashState.IDLE, lastFinal, lastFinal.isNotEmpty(), reply = lastReply)
 
     private fun setModel(state: ShamashState, transcript: String, isFinal: Boolean = false) {
         _model.value = ScreenModel(state, transcript, isFinal)
@@ -146,6 +157,7 @@ class SessionController(
 
     private fun startSession() {
         if (sessionJob?.isActive == true) return // double-tap guard
+        lastReply = ""
         setModel(ShamashState.WORKING, "") // synchronously, so a second tap is ignored
         val signal = CompletableDeferred<Unit>()
         stopSignal = signal
@@ -219,6 +231,7 @@ class SessionController(
             captureJob = scope.launch(ioDispatcher) {
                 try {
                     capture.start().collect { chunk ->
+                        _level.value = meter.update(chunk)
                         w.write(chunk)
                         var out = chunk
                         if (skipBytes > 0) {
@@ -257,6 +270,7 @@ class SessionController(
 
             stopAt = clock.elapsedMs()
             capture.stop()
+            _level.value = 0f
             cues.stop()
             _model.update { it.copy(state = ShamashState.WORKING) }
             if (withTimeoutOrNull(2_000) { captureJob.join() } == null) captureJob.cancel()
@@ -303,6 +317,8 @@ class SessionController(
             withContext(NonCancellable) {
                 partialJob?.cancel()
                 captureJob?.cancel()
+                meter.reset()
+                _level.value = 0f
                 try {
                     session.close()
                 } catch (_: Exception) {
@@ -375,8 +391,8 @@ class SessionController(
                 rp.awaitReply(
                     onReplyText = { reply ->
                         if (replyInFlight) {
-                            lastFinal = reply
-                            _model.update { it.copy(transcript = reply, isFinal = true) }
+                            lastReply = reply
+                            _model.update { it.copy(reply = reply, isFinal = true) }
                         }
                     },
                     onSpeakingStarted = {
@@ -385,7 +401,7 @@ class SessionController(
                 )
             }
             replyInFlight = false
-            setModel(ShamashState.IDLE, lastFinal, isFinal = lastFinal.isNotEmpty())
+            _model.value = idleModel()
         } catch (e: TimeoutCancellationException) {
             replyInFlight = false
             rp.cancelReply()

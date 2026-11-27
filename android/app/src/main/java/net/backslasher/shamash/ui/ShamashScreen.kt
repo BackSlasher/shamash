@@ -13,7 +13,15 @@ import net.backslasher.shamash.BuildConfig
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.text.BasicText
@@ -60,6 +68,8 @@ fun ShamashScreen(
     onPressUp: () -> Unit = {},
     maintenance: Boolean = false,
     onMaintenanceUnlock: () -> Unit = {},
+    /** Microphone level 0..1; read only in the draw phase of the listening meter. */
+    level: () -> Float = { 0f },
 ) {
     val unlock by rememberUpdatedState(onMaintenanceUnlock)
     val tap by rememberUpdatedState(onTap)
@@ -137,15 +147,64 @@ fun ShamashScreen(
         CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
             if (model.state == ShamashState.ERROR) {
                 ErrorContent(model)
-            } else if (model.transcript.isNotEmpty()) {
+            } else if (model.reply.isEmpty() && (model.state == ShamashState.IDLE || model.state == ShamashState.LISTENING)) {
+              if (model.transcript.isNotEmpty()) {
                 BasicText(
                     text = model.transcript,
                     modifier = Modifier.fillMaxSize().padding(horizontal = 32.dp, vertical = 48.dp),
                     style = textStyle(64),
                     autoSize = TextAutoSize.StepBased(minFontSize = 24.sp, maxFontSize = 64.sp, stepSize = 2.sp),
                 )
+              }
+            } else {
+                HeardAndReply(model)
+            }
+            if (model.state == ShamashState.LISTENING) {
+                LevelMeter(level)
+                Hint("לחץ שוב כשסיימת")
+            } else if (model.state == ShamashState.WORKING) {
+                Hint("רגע...")
             }
         }
+    }
+}
+
+/** What he said (28 sp) and under it the reply (32 sp), top two thirds, scrolling when long. */
+@Composable
+private fun BoxScope.HeardAndReply(model: ScreenModel) {
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .fillMaxHeight(0.66f)
+            .align(Alignment.TopCenter)
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 32.dp, vertical = 48.dp),
+        horizontalAlignment = Alignment.Start, // right edge under RTL
+    ) {
+        if (model.transcript.isNotEmpty()) BasicText(model.transcript, modifier = Modifier.fillMaxWidth(), style = textStyle(28))
+        if (model.reply.isNotEmpty()) {
+            BasicText(model.reply, modifier = Modifier.fillMaxWidth().padding(top = 24.dp), style = textStyle(32))
+        }
+    }
+}
+
+/** Large hint in the bottom third. */
+@Composable
+private fun BoxScope.Hint(text: String) {
+    Box(Modifier.align(Alignment.BottomCenter).fillMaxWidth().fillMaxHeight(1f / 3f), contentAlignment = Alignment.Center) {
+        BasicText(text, style = textStyle(40).copy(textAlign = TextAlign.Center))
+    }
+}
+
+/** A ring that swells with the microphone level. Composed only while listening, so it costs nothing otherwise. */
+@Composable
+private fun LevelMeter(level: () -> Float) {
+    val shown by animateFloatAsState(level(), tween(100, easing = LinearEasing), label = "level")
+    Canvas(Modifier.fillMaxSize()) {
+        val l = shown.coerceIn(0f, 1f)
+        val maxR = size.minDimension * 0.42f
+        val r = maxR * (0.35f + 0.65f * l)
+        drawCircle(Color.White.copy(alpha = 0.25f + 0.5f * l), r, Offset(size.width / 2, size.height / 2), style = Stroke(width = 14f + 26f * l))
     }
 }
 

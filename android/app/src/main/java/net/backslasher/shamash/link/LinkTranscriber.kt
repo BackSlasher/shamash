@@ -9,6 +9,9 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.withContext
 import net.backslasher.shamash.config.ShamashConfig
@@ -82,7 +85,18 @@ class LinkTranscriber(
 
     @Volatile private var turn: Turn? = null
 
+    private val _heard = MutableStateFlow("")
+    private val _replyText = MutableStateFlow("")
+
+    /** The PC's transcript of the current turn, set the moment it arrives; empty until then and reset at each turn start. */
+    val heard: StateFlow<String> = _heard.asStateFlow()
+
+    /** The PC's reply text of the current turn, set the moment it arrives. */
+    val replyText: StateFlow<String> = _replyText.asStateFlow()
+
     override suspend fun openStream(): StreamingSession {
+        _heard.value = ""
+        _replyText.value = ""
         val events = Channel<Event>(Channel.UNLIMITED)
         val opened = CompletableDeferred<Unit>()
         val listener = object : WebSocketListener() {
@@ -169,6 +183,7 @@ class LinkTranscriber(
                     is Event.Text -> when (val m = e.msg) {
                         is LinkMessage.Transcript -> {
                             ok = true
+                            _heard.value = m.text
                             return BatchResult(m.text, m.raw)
                         }
                         is LinkMessage.Error -> throw LinkPcException(m.stage, m.message)
@@ -195,7 +210,10 @@ class LinkTranscriber(
                 while (true) {
                     when (val e = t.next()) {
                         is Event.Text -> when (val m = e.msg) {
-                            is LinkMessage.Reply -> onReplyText(m.text)
+                            is LinkMessage.Reply -> {
+                                _replyText.value = m.text
+                                onReplyText(m.text)
+                            }
                             is LinkMessage.AudioStart -> t.sink = sinkFactory(m.sampleRate)
                             is LinkMessage.AudioEnd -> {
                                 t.sink?.finish()

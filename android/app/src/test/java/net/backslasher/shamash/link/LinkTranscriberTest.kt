@@ -119,6 +119,24 @@ class LinkTranscriberTest {
         waitFor { closedByClient }
     }
 
+    @Test fun transcriptAndReplyMessagesUpdateExposedText() = run {
+        onEnd = { ws ->
+            ws.send("""{"type":"transcript","text":"שלום"}""")
+            ws.send("""{"type":"reply","text":"היי"}""")
+            ws.send("""{"type":"done"}""")
+        }
+        val t = transcriber()
+        assertEquals("", t.heard.value)
+        val s = t.openStream()
+        s.finish()
+        t.transcribeBatch(File("x"))
+        assertEquals("שלום", t.heard.value)
+        assertEquals("", t.replyText.value)
+        t.awaitReply({}, {})
+        assertEquals("היי", t.replyText.value)
+        assertEquals("שלום", t.heard.value)
+    }
+
     @Test fun emptyTranscriptThenDoneReturnsWithoutAudio() = run {
         onEnd = { ws ->
             ws.send("""{"type":"transcript","text":""}""")
