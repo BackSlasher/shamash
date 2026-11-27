@@ -28,6 +28,11 @@ uses, runs it with a 25 s timeout (no model, STT or TTS) and answers with one te
 `error` ("direct tool calls are disabled") and closes. One log line per call. `tools/pclink/client.py --tool <name> '<json>'`
 sends it (exit 0 result, 2 error, 3 unknown tool).
 
+Test aid, history reset: a text message `{"type":"reset"}` (no `hello` needed), accepted ONLY when `allowTextTurns` is
+true. The PC clears the conversation history the pipeline keeps, answers `{"type":"reset_ok"}` and closes. With
+`allowTextTurns` off nothing is cleared and the PC answers `{"type":"reset_error","error":"..."}` and closes. One log
+line per call. `tools/pclink/client.py --reset` (or `client.sh <url> --reset`) sends it (exit 0 `reset_ok`, 2 error).
+
 Frames shorter than 12 bytes are ignored. Messages over 1 MB close the socket.
 
 ## PC → phone

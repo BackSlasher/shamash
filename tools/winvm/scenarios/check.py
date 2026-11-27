@@ -64,7 +64,11 @@ def check_turn(turn: dict, data: dict, wall_ms: int) -> list[str]:
         if extra:
             errs.append(f"tools outside {turn['only_tools']} were called: {extra}")
     for tool, prefix in (turn.get("expect_result_prefix") or {}).items():
-        got = [c.get("resultPrefix", "") for c in calls if c["name"] == tool]
+        mine = [c for c in calls if c["name"] == tool]
+        if mine and not any("resultPrefix" in c for c in mine):
+            errs.append(f"{tool}: resultPrefix missing (build older than 0.1.15?)")
+            continue
+        got = [c.get("resultPrefix", "") for c in mine]
         if not any(g.startswith(prefix) for g in got):
             errs.append(f"{tool}: expected result prefix {prefix!r}, got {got}")
     limit = turn.get("max_total_ms")
@@ -103,6 +107,11 @@ def main() -> int:
     sc = json.loads(Path(args[0]).read_text(encoding="utf-8"))
     name = sc.get("name", Path(args[0]).stem)
     failures: list[str] = []
+    r = subprocess.run([CLIENT, url, "--reset"], capture_output=True, text=True, timeout=60)
+    if r.returncode != 0 or "reset_ok" not in r.stdout:
+        print(f"FAIL {name}")
+        print(f"  - history reset did not answer reset_ok (exit {r.returncode}): {(r.stdout + r.stderr).strip()[-300:]}")
+        return 1
     try:
         for line in sc.get("setup", []):
             ps(line)

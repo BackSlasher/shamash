@@ -5,6 +5,7 @@
 #   tools/pclink/client.sh ws://192.168.1.138:8777/ --tool is_document_open '{"path":"Desktop/Reading list.docx"}'
 # Host paths for the WAVs are mounted; the output WAV lands next to the input.
 # --tool runs one tool directly (no model/STT/TTS), prints result or "error: ..."; exit 0 result, 2 error, 3 unknown tool.
+#   tools/pclink/client.sh ws://127.0.0.1:8777/ --reset      (clear the PC's conversation history; exit 0 reset_ok, 2 error)
 # --text is the test aid (PC needs allowTextTurns): no input WAV, hello carries the transcript.
 set -euo pipefail
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -15,6 +16,12 @@ if [ "$#" -ge 1 ] && [[ "$1" == "--tool" ]]; then
   exec podman run --rm --userns=keep-id --user "$(id -u):$(id -g)" --network host \
     -v "$here/client.py:/app/client.py:ro,Z" localhost/shamash-pclink \
     python -u /app/client.py "$url" --tool "$2" "$3"
+fi
+if [ "$#" -ge 1 ] && [[ "$1" == "--reset" ]]; then
+  podman image exists localhost/shamash-pclink || podman build -t localhost/shamash-pclink -f "$here/Containerfile" "$here" >/dev/null
+  exec podman run --rm --userns=keep-id --user "$(id -u):$(id -g)" --network host \
+    -v "$here/client.py:/app/client.py:ro,Z" localhost/shamash-pclink \
+    python -u /app/client.py "$url" --reset
 fi
 in=""; text=()
 if [ "$#" -gt 0 ] && [[ "$1" == "--text" ]]; then

@@ -125,6 +125,11 @@ public sealed class LinkServer(ILoggerFactory loggerFactory, string url, string 
                             await HandleToolAsync(ws, root!.RootElement, peer, ct);
                             return;
                         }
+                        else if (type == "reset")
+                        {
+                            await HandleResetAsync(ws, peer);
+                            return;
+                        }
                         else if (type == "cancel" && conversation)
                         {
                             turnCts.Cancel();
@@ -227,6 +232,30 @@ public sealed class LinkServer(ILoggerFactory loggerFactory, string url, string 
         _log.LogInformation("link: peer={Peer} frames={Frames} bytes={Bytes} audio={Audio}s wall={Wall}s gaps={Gaps} interarrival_ms(min/med/max)={Jit}",
             peer, stats.Frames, stats.Bytes, secs.ToString("F2", CultureInfo.InvariantCulture),
             sw.Elapsed.TotalSeconds.ToString("F2", CultureInfo.InvariantCulture), stats.Gaps, jit);
+    }
+
+    /// <summary>Test aid: clear the conversation history, reply reset_ok, close. Needs allowTextTurns.</summary>
+    private async Task HandleResetAsync(WebSocket ws, string peer)
+    {
+        var pipe = _pipeline.Value;
+        string reply;
+        if (!pipe.AllowTextTurns)
+        {
+            reply = JsonSerializer.Serialize(new { type = "reset_error", error = "reset is disabled (allowTextTurns is off)" });
+            _log.LogInformation("link: reset from {Peer}: refused", peer);
+        }
+        else
+        {
+            pipe.ResetHistory();
+            reply = """{"type":"reset_ok"}""";
+            _log.LogInformation("link: reset from {Peer}: history cleared", peer);
+        }
+        try
+        {
+            await ws.SendAsync(Encoding.UTF8.GetBytes(reply), WebSocketMessageType.Text, true, CancellationToken.None);
+            await ws.CloseAsync(WebSocketCloseStatus.NormalClosure, null, CancellationToken.None);
+        }
+        catch (Exception e) when (e is WebSocketException or OperationCanceledException or IOException) { }
     }
 
     public static readonly TimeSpan ToolTimeout = TimeSpan.FromSeconds(25);

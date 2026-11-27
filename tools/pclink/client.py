@@ -5,6 +5,9 @@
     client.py ws://host:8777/ [reply.wav] --text "<hebrew>"     (text turn, test aid, no WAV)
     client.py ws://host:8777/ --tool <name> '<json input>'      (run one tool directly, test aid)
 
+    client.py ws://host:8777/ --reset                             (clear the conversation history, test aid)
+
+--reset prints "reset_ok" (exit 0) or "error: ..." (exit 2). Needs allowTextTurns on the PC.
 --tool prints the tool's result (or "error: <message>") to stdout verbatim. Exit 0 on result,
 2 on error, 3 on unknown tool. Needs allowTextTurns on the PC.
 
@@ -108,6 +111,21 @@ async def run(url: str, wav_in: str | None, wav_out: str | None, probe: bool, fa
     return rc
 
 
+async def run_reset(url: str) -> int:
+    async with websockets.connect(url, max_size=1 << 20) as ws:
+        await ws.send(json.dumps({"type": "reset"}))
+        try:
+            m = json.loads(await asyncio.wait_for(ws.recv(), timeout=15))
+        except (asyncio.TimeoutError, websockets.ConnectionClosed):
+            print("error: no reply (is allowTextTurns on, and is the PC build new enough?)")
+            return 2
+    if m.get("type") == "reset_ok":
+        print("reset_ok")
+        return 0
+    print(f"error: {m.get('error', m)}")
+    return 2
+
+
 async def run_tool(url: str, name: str, raw_input: str) -> int:
     try:
         tool_input = json.loads(raw_input)
@@ -133,6 +151,8 @@ async def run_tool(url: str, name: str, raw_input: str) -> int:
 
 if __name__ == "__main__":
     argv = sys.argv[1:]
+    if "--reset" in argv:
+        sys.exit(asyncio.run(run_reset(argv[0])))
     if "--tool" in argv:
         i = argv.index("--tool")
         if i == 0 or i + 2 >= len(argv):

@@ -119,6 +119,9 @@ public sealed class TurnPipeline(ISpeechToText stt, IReplyModel llm, ITextToSpee
 
     public IReadOnlyList<ChatTurn> HistorySnapshot() { lock (_lock) return [.. _history]; }
 
+    /// <summary>Test aid: forget the conversation so far (link message "reset", allowTextTurns only).</summary>
+    public void ResetHistory() { lock (_lock) _history.Clear(); }
+
     private void Append(string user, string assistant)
     {
         lock (_lock)

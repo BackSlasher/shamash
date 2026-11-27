@@ -1,17 +1,18 @@
 #!/usr/bin/env bash
 # Scenario suite for the PC service on the win11-office VM. See README.md.
-#   run.sh [--restore] [--install <Setup.exe>] [--only <name>] [--url ws://127.0.0.1:8777/]
+#   run.sh [--restore] [--install <Setup.exe>] [--expect-version <v>] [--only <name>] [--url ws://127.0.0.1:8777/]
 # config.json (API keys, allowTextTurns=true, document roots) is NOT handled here: the maintainer
 # must have deployed it to the VM (and, with --restore, into the snapshot or after the restore).
 set -uo pipefail
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 winvm="$(dirname "$here")"
 vm_dir="${SHAMASH_WINVM_DIR:-$HOME/vm/shamash-win11}"
-restore=0 setup="" only="" url="ws://127.0.0.1:8777/"
+restore=0 setup="" only="" expect="" url="ws://127.0.0.1:8777/"
 while [ $# -gt 0 ]; do
   case "$1" in
     --restore) restore=1 ;;
     --install) setup="$(realpath "$2")"; shift ;;
+    --expect-version) expect="$2"; shift ;;
     --only) only="$2"; shift ;;
     --url) url="$2"; shift ;;
     *) sed -n '2,6p' "$0"; exit 2 ;;
@@ -28,8 +29,16 @@ if [ "$restore" = 1 ]; then "$winvm/snapshot.sh" restore win11-office || exit 1;
 wait_ssh || exit 1
 if [ -n "$setup" ]; then
   mkdir -p "$vm_dir/shared" && cp "$setup" "$vm_dir/shared/Setup.exe" || exit 1
-  "$winvm/ssh.sh" '& \\host.lan\Data\Setup.exe --silent' || exit 1
+  "$winvm/ssh.sh" 'Copy-Item \\host.lan\Data\Setup.exe C:\Users\shamash\Setup.exe -Force; Start-Process C:\Users\shamash\Setup.exe -ArgumentList "--silent" -Wait' || exit 1
   echo "waiting ~75 s for the indexer and the service"; pause 75
+fi
+
+# Which version is running? Newest log, last "heartbeat, version X" or "after-install X".
+version="$("$winvm/ssh.sh" '$f = Get-ChildItem $env:LocalAppData\Shamash\logs\*.log -ErrorAction SilentlyContinue | Sort-Object LastWriteTime | Select-Object -Last 1; if ($f) { $m = Select-String -Path $f.FullName -Pattern "heartbeat, version (\S+)|after-install (\S+)" | Select-Object -Last 1; if ($m) { $g = $m.Matches[0].Groups; if ($g[1].Success) { $g[1].Value } else { $g[2].Value } } }' 2>/dev/null | tr -d '\r' | tail -n 1)"
+version="${version%,}"
+echo "installed version: ${version:-unknown}"
+if [ -n "$expect" ] && [[ "$version" != "$expect"* ]]; then
+  echo "expected version $expect, found ${version:-unknown}" >&2; exit 4
 fi
 
 fail=0 total=0

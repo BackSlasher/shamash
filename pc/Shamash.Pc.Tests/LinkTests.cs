@@ -148,6 +148,7 @@ public class LinkTests
 
         var buf2 = new byte[16];
         await ws.ReceiveAsync(buf2, cts.Token); // close frame
+        await ws.CloseAsync(WebSocketCloseStatus.NormalClosure, null, cts.Token); // answer it, or the server's close handshake waits out the host shutdown timeout
         await server.StopAsync();
         var wavs = Directory.GetFiles(dir, "pclink-*.wav");
         Assert.Single(wavs);
@@ -163,10 +164,12 @@ public class LinkTests
         public Task<string> RunAsync(JsonElement input, CancellationToken ct) => Task.FromResult(run(input));
     }
 
-    private static async Task<JsonDocument> ToolCall(bool allow, string message, IAgentTool tool)
+    private static Task<JsonDocument> ToolCall(bool allow, string message, IAgentTool tool) =>
+        Send(new TurnPipeline(new NoStt(), new EchoReplyModel(), new NoTts(), NullLogger.Instance, allow, [tool]), message);
+
+    private static async Task<JsonDocument> Send(TurnPipeline pipe, string message)
     {
         var dir = Path.Combine(Path.GetTempPath(), "shamash-link-" + Guid.NewGuid().ToString("N"));
-        var pipe = new TurnPipeline(new NoStt(), new EchoReplyModel(), new NoTts(), NullLogger.Instance, allow, [tool]);
         await using var server = new LinkServer(NullLoggerFactory.Instance, "http://127.0.0.1:0", dir, pipe);
         await server.StartAsync();
         using var ws = new ClientWebSocket();
@@ -176,6 +179,8 @@ public class LinkTests
         var buf = new byte[65536];
         var r = await ws.ReceiveAsync(buf, cts.Token);
         var doc = JsonDocument.Parse(buf.AsMemory(0, r.Count));
+        await ws.ReceiveAsync(buf, cts.Token); // server's close frame
+        await ws.CloseAsync(WebSocketCloseStatus.NormalClosure, null, cts.Token); // complete the handshake; otherwise StopAsync waits ~30 s
         await server.StopAsync();
         return doc;
     }
@@ -227,5 +232,33 @@ public class LinkTests
     {
         using var d = await ToolCall(true, """{"type":"tool","name":"nope","input":{}}""", new FakeTool(_ => "x"));
         Assert.Equal("unknown tool nope", d.RootElement.GetProperty("error").GetString());
+    }
+
+    private sealed class NullSender : ITurnSender
+    {
+        public Task SendTextAsync(string json, CancellationToken ct) => Task.CompletedTask;
+        public Task SendBinaryAsync(ReadOnlyMemory<byte> data, CancellationToken ct) => Task.CompletedTask;
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task ResetMessage_ClearsHistoryOnlyWhenTextTurnsOn(bool allow)
+    {
+        var pipe = new TurnPipeline(new NoStt(), new EchoReplyModel(), new NoTts(), NullLogger.Instance, allowTextTurns: true);
+        await pipe.RunAsync(new byte[32000], 16000, new NullSender(), default, "hello");
+        Assert.Equal(2, pipe.HistorySnapshot().Count);
+        if (!allow)
+        {
+            // same history, but a pipeline that refuses: build the refusing one and check it directly
+            var off = new TurnPipeline(new NoStt(), new EchoReplyModel(), new NoTts(), NullLogger.Instance, allowTextTurns: false);
+            using var refused = await Send(off, """{"type":"reset"}""");
+            Assert.False(refused.RootElement.TryGetProperty("type", out var t) && t.GetString() == "reset_ok");
+            Assert.True(refused.RootElement.TryGetProperty("error", out _));
+            return;
+        }
+        using var d = await Send(pipe, """{"type":"reset"}""");
+        Assert.Equal("reset_ok", d.RootElement.GetProperty("type").GetString());
+        Assert.Empty(pipe.HistorySnapshot());
     }
 }

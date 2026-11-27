@@ -4,7 +4,7 @@ Replays the owner's phone session of 2026-11-28 and the VM tests of 2026-11-27 a
 the real model, and asserts tool sequences and end state. Item 2 of the "Regression harness for Office tools" task.
 
 ```
-tools/winvm/scenarios/run.sh [--restore] [--install <Setup.exe>] [--only <name>] [--url ws://127.0.0.1:8777/]
+tools/winvm/scenarios/run.sh [--restore] [--install <Setup.exe>] [--expect-version <v>] [--only <name>] [--url ws://127.0.0.1:8777/]
 ```
 
 The maintainer runs it; it needs podman (for `tools/pclink/client.sh`), the VM up, and:
@@ -15,6 +15,15 @@ The maintainer runs it; it needs podman (for `tools/pclink/client.sh`), the VM u
    installer to `~/vm/shamash-win11/shared/`, runs it over ssh with `--silent` and waits ~75 s for the indexer; do the config deploy
    before running the suite (restore, install by hand or with `--install` alone, deploy config, then run without `--restore`).
 3. The Outlook object-model guard policy from `tools/winvm/README.md` must be set for the mail scenario.
+
+4. `--install` copies Setup.exe to `~/vm/shamash-win11/shared/`, then over ssh copies it from `\\host.lan\Data` to `C:\Users\shamash\Setup.exe`
+   and runs it with `--silent -Wait` (running the share path directly did not install). After ~75 s the script reads the newest
+   `%LocalAppData%\Shamash\logs\*.log` for the last `heartbeat, version X` / `after-install X` and prints `installed version: X`.
+   This line is printed on every run, with or without `--install`, so the report says what was tested.
+   `--expect-version <v>` (optional) exits 4 before any scenario if the version read back does not start with `<v>`.
+5. Before each scenario `check.py` sends `client.sh <url> --reset` (link message `{"type":"reset"}`, allowTextTurns only), which clears the
+   service's conversation history, so a "no" in one scenario cannot leak into the next. If the reset does not answer `reset_ok`
+   (service too old, allowTextTurns off) the scenario fails at once.
 
 Exit code is non-zero if any scenario failed; each failure prints the failing assertion.
 
@@ -43,7 +52,7 @@ One JSON file per scenario in this folder, run in file-name order:
   (`%LocalAppData%\Shamash\pclink\*.json`) carries `resultPrefix`, the first 80 characters of each tool result (added with this suite).
 - `max_total_ms`: bound on `timingsMs.total` of the turn.
 - A turn that reports an `error` in its JSON fails the scenario.
-- Turns of a scenario run in one conversation; the service keeps its history across scenarios too, so a scenario's first turn
+- Turns of a scenario run in one conversation; the history is reset between scenarios (see above), so a scenario's first turn
   must make sense without context. Scenarios that change files clean up in `teardown`.
 
 ## Scenarios
@@ -58,6 +67,12 @@ One JSON file per scenario in this folder, run in file-name order:
 | `index-down` | `WSearch` stopped: `search_documents` returns `error:` and no other tool runs; teardown starts the service, `run.sh` then waits 70 s |
 | `same-name-identity` | two `Reading list.docx` (Desktop and `Documents\Desktop stuff`): open one, the other is reported as "not open; a different file", close |
 | `word-dialog` | "is Word showing something" calls `describe_office_dialogs` |
+
+## First run
+
+The first run (2026-11-28) had two `expect_result_prefix` failures. Those were the old installed build, which predates `resultPrefix`
+(the `--install` that should have updated it silently did nothing). `check.py` now reports `resultPrefix missing (build older than 0.1.15?)`
+when the turn JSON has no such field at all.
 
 ## Not asserted, and known limits
 
