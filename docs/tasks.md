@@ -62,6 +62,7 @@ Confirmation needed: none.
 Seed data for the VM: a few Hebrew and English articles with headings, footnotes, tables.
 Done when: a new .docx exists with the translation and formatting kept.
 Owner notes (2026-11-27): no cloud-side Office exists; do it locally without Word: read the .docx with OpenXML, translate paragraphs with Claude, write back into the same structure (styles, headings, tables, lists), save as a new file, open it in Word. Flip paragraph direction for Hebrew<->English. PDFs come out as a translated .docx. Complex layouts are the hard part; v1 = paragraphs, headings, tables, lists.
+Verified in Word (2026-11-27): headings, styles and text preserved; RTL run flag fix needed and done.
 
 ### Organise and deduplicate a folder                   status: tested-vm
 Ask: "תסדר לי את התיקייה של המאמרים"
@@ -132,7 +133,7 @@ Confirmation needed: none.
 Seed data for the VM: two documents open, the target behind another window and one minimized.
 Done when: the document's window is the active window.
 
-### Close a document                                    status: tooling
+### Close a document                                    status: tested-vm
 Ask: "תסגור את המסמך", "תסגור את המכתב ותשמור"
 Also phrased as: "תסגור בלי לשמור"
 What should happen: needs the Office edition decision. For Word/Excel with automation available: find the document by path and read its Saved flag. If there are unsaved changes ask aloud "יש שינויים שלא נשמרו, לשמור?" and close with SaveChanges accordingly; if no changes, close without asking. Without automation (other apps): only a WM_CLOSE to the window, which lets the app show its own save prompt, and tell him to answer on screen.

@@ -109,6 +109,36 @@ public class TranslateTests
         Assert.Contains("שלום עולם [English]", TranslateDocumentTool.ParagraphText(outp.Last()));
     }
 
+    private static void MakeRtlDocx(string path, bool rtl)
+    {
+        using var doc = WordprocessingDocument.Create(path, DocumentFormat.OpenXml.WordprocessingDocumentType.Document);
+        var main = doc.AddMainDocumentPart();
+        RunProperties Rp() => rtl ? new RunProperties(new RightToLeftText()) : new RunProperties(new Bold());
+        var pPr = new ParagraphProperties();
+        if (rtl) pPr.Append(new BiDi());
+        pPr.Append(new ParagraphMarkRunProperties(rtl ? new RightToLeftText() : new Bold()));
+        var p = new Paragraph(pPr, new Run(Rp(), new Text(rtl ? "שלום עולם." : "Hello world.")), new Run(Rp(), new Text(" עוד")));
+        main.Document = new Document(new Body(p));
+        main.Document.Save();
+    }
+
+    [Theory]
+    [InlineData("en", true)]
+    [InlineData("he", false)]
+    public async Task Docx_RunRtl_FollowsTarget(string lang, bool sourceRtl)
+    {
+        using var d = new TempDir();
+        var src = d.File("r.docx");
+        MakeRtlDocx(src, sourceRtl);
+        await new TranslateDocumentTool([d.Path], new FakeTranslator()).RunAsync(In($$"""{"path":{{Q(src)}},"target_language":"{{lang}}"}"""), default);
+        var p = Paras(d.File(lang == "en" ? "r (English).docx" : "r (עברית).docx")).Single();
+        var wantRtl = lang == "he";
+        Assert.Equal(wantRtl, p.ParagraphProperties!.GetFirstChild<BiDi>() is not null);
+        Assert.All(p.Descendants<Run>(), r => Assert.Equal(wantRtl, r.RunProperties?.GetFirstChild<RightToLeftText>() is not null));
+        Assert.Equal(wantRtl, p.ParagraphProperties!.GetFirstChild<ParagraphMarkRunProperties>()!.GetFirstChild<RightToLeftText>() is not null);
+        if (!wantRtl) Assert.Empty(p.Descendants<RightToLeftText>());
+    }
+
     [Fact]
     public async Task NameCollision_AppendsCounter_NeverOverwrites()
     {

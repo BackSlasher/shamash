@@ -253,6 +253,37 @@ public sealed class TranslateDocumentTool(IReadOnlyList<string> roots, ITranslat
         }
         first.Append(new Text(text) { Space = SpaceProcessingModeValues.Preserve });
         SetDirection(p, hebrew);
+        SetRunDirection(p, hebrew);
+    }
+
+    private static readonly System.Type[] AfterRtl = [typeof(ComplexScript), typeof(Emphasis), typeof(Languages), typeof(EastAsianLayout), typeof(SpecVanish), typeof(OfficeMath)];
+
+    /// <summary>Adds (Hebrew) or removes (English) w:rtl on every run and on the paragraph mark, so punctuation does not jump to the line start.</summary>
+    internal static void SetRunDirection(Paragraph p, bool hebrew)
+    {
+        var holders = new List<OpenXmlCompositeElement>();
+        foreach (var r in p.Descendants<Run>())
+            holders.Add(r.RunProperties ?? r.PrependChild(new RunProperties()));
+        if (p.ParagraphProperties is { } pPr)
+        {
+            var mark = pPr.GetFirstChild<ParagraphMarkRunProperties>();
+            if (mark is null && hebrew)
+            {
+                mark = new ParagraphMarkRunProperties();
+                var anchor = pPr.ChildElements.FirstOrDefault(c => c is SectionProperties or ParagraphPropertiesChange);
+                if (anchor is not null) pPr.InsertBefore(mark, anchor); else pPr.Append(mark);
+            }
+            if (mark is not null) holders.Add(mark);
+        }
+        foreach (var rPr in holders)
+        {
+            var rtl = rPr.GetFirstChild<RightToLeftText>();
+            if (!hebrew) { rtl?.Remove(); continue; }
+            if (rtl is not null) continue;
+            var anchor = rPr.ChildElements.FirstOrDefault(c => AfterRtl.Contains(c.GetType()));
+            var node = new RightToLeftText();
+            if (anchor is not null) rPr.InsertBefore(node, anchor); else rPr.Append(node);
+        }
     }
 
     private static readonly System.Type[] AfterBiDi =
@@ -321,6 +352,7 @@ public sealed class TranslateDocumentTool(IReadOnlyList<string> roots, ITranslat
             {
                 var p = new Paragraph(new Run(new Text(b) { Space = SpaceProcessingModeValues.Preserve }));
                 SetDirection(p, hebrew);
+                SetRunDirection(p, hebrew);
                 body.Append(p);
             }
             main.Document = new Document(body);
