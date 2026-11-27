@@ -98,8 +98,8 @@ subscription can be signed in on up to five PCs, which could include this VM).
 
 Files in `tools/winvm/office/`: `config.xml`, `install-office.ps1`, `outlook.prf`, `outlook-wizard-driver.ps1`.
 
-- Source: the owner's Office 2016 Professional Plus 64-bit volume media (`SW_DVD5_Office_Professional_Plus_2016_64Bit_English_MLF_X20-42432.ISO`)
-  on his Google Drive, pulled with `rclone copy saba-d:OFFICE2016/<name> ~/vm/shamash-win11/shared/office/`.
+- Source: the maintainer's own Office 2016 Professional Plus 64-bit volume-licence ISO (`SW_DVD5_Office_Professional_Plus_2016_64Bit_English_MLF_X20-42432.ISO`);
+  copy your ISO into `~/vm/shamash-win11/shared/office/`. The repo ships no ISO.
 - Install: put the ISO, `config.xml` and `install-office.ps1` in `shared/office/`, then `tools/winvm/ssh.sh '\\host.lan\Data\office\install-office.ps1'`
   (copies and mounts the ISO, runs `setup.exe /config C:\office-config.xml`, Word + Excel + Outlook only, no restart).
   Office is at `C:\Program Files\Microsoft Office\Office16`.
@@ -113,7 +113,8 @@ Files in `tools/winvm/office/`: `config.xml`, `install-office.ps1`, `outlook.prf
   `Software\Microsoft\Office\16.0\Registration\AcceptAllEulas=1` (set during the install work), and for Outlook
   `Software\Microsoft\Office\16.0\Outlook\Setup\First-Run=1` and `FirstRun=1`.
 - Outlook profile `Shamash`, one PST and no mail account, PST at
-  `C:\Users\shamash\Documents\Outlook Files\<account>.pst` (copy of the live file, 937 MB; it opened without repair).
+  `C:\Users\shamash\Documents\Outlook Files\<account>.pst`. The PST must be supplied by the maintainer (any PST, e.g. one
+  exported from their own Outlook); the repo ships no PST.
   What it took (the PRF alone was not enough):
   1. `outlook.exe /importprf C:\outlook.prf` (file in `office/outlook.prf`, CRLF line endings; copy it from
      `\\host.lan\Data\outlook.prf`). This creates the profile and an empty "Outlook data file" service but did NOT apply
@@ -130,13 +131,19 @@ Files in `tools/winvm/office/`: `config.xml`, `install-office.ps1`, `outlook.prf
      `HKCU:\Software\Microsoft\Office\16.0\Outlook\Resiliency` before launching.
   There is no `Windows Messaging Subsystem\Profiles` key for Outlook 2016; the profile lives under `Office\16.0\Outlook\Profiles`.
 - COM check over SSH works once the profile is right: `(New-Object -ComObject Outlook.Application).GetNamespace("MAPI")`
-  gives 1 store (`<account>`), Inbox 2263 items, 1045 unread via `Items.Restrict("[UnRead] = true")`, newest received
-  2026-11-12. `CurrentProfileName` read back empty from SSH, but the store is there. A second `New-Object` while the first
+  gives 1 store (`<account>`), the Inbox item count and the unread count via `Items.Restrict("[UnRead] = true")`. `CurrentProfileName` read back empty from SSH, but the store is there. A second `New-Object` while the first
   COM-started Outlook is still alive fails with 0x80080005; kill Outlook between runs (and clear `Resiliency`).
 - `Get-ChildItem -Filter *.doc` also returns `.docx` (8.3 matching); filter on `.Extension`.
-- Snapshot `win11-office` (saved 2026-11-27 02:51): seeded corpus + real Desktop sample from the saba mirror + the PST +
-  Office 2016 Word/Excel/Outlook; no Shamash, no secrets, no Outlook profile. It predates the profile above, so after a
-  restore the profile steps (PRF import, registry path, wizard click-through) must be redone, or take a new snapshot once done.
+- Snapshot `win11-office`: win11-seeded (the generic 58-file corpus from `tools/seed-docs/gen.py`) + Office 2016 Pro Plus
+  64-bit Word/Excel/Outlook, unactivated + an Outlook profile "Shamash" over a PST supplied by the maintainer; no Shamash
+  service, no secrets. If a restored snapshot lacks the profile, redo the profile steps above (PRF import, registry path,
+  wizard click-through) and take a new snapshot.
+
+### Optional: a real sample (local only)
+
+The maintainer may copy real documents and a real PST into the VM for private testing. Those files, and any snapshot taken
+afterwards, stay in `~/vm/shamash-win11/`, which is outside the repo. Never commit them and never record their names or
+contents in this repo; keep the public snapshots generic.
 
 ### Outlook object-model guard on the VM
 
