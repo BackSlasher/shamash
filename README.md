@@ -287,6 +287,10 @@ Then check the device checklist items that matter (boot to app, mic grant, a sho
 3. Grant Obtainium "Install unknown apps" when asked.
 4. In Obtainium settings turn on background update checks.
 
+Two things to know before the first Obtainium install (seen 2026-11-27, "failureConflict [Shamash]"):
+- A debug build loaded over adb is signed with the debug key; the release APK with the release key. Android refuses to update one with the other, so uninstall the debug build once (`adb uninstall net.backslasher.shamash`) before the first Obtainium install. After that Obtainium updates cleanly.
+- The release build only talks to a PC if `SHAMASH_PC_LINK_URL` (a `wss://` address) was set in `.env` when `tools/release.sh` ran; without it the APK is the standalone speech-to-text demo. For VM testing keep the debug link build (`./build.sh assembleDebug -PpcLinkUrl=ws://<host>:8777/`), which is the only one that may use plain `ws://`.
+
 Obtainium cannot install silently on a stock phone: without Shizuku or root it downloads the APK and shows a notification, and someone taps Install. That is acceptable for the POC phone. Prompt-free updates are the device-owner self-update design in the "PC side" notes, where the app installs its own APK through `PackageInstaller`.
 
 ## Device test checklist
