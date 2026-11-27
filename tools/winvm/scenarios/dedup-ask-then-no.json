@@ -1,14 +1,33 @@
 {
   "name": "dedup-ask-then-no",
-  "setup": ["Remove-Item \"$env:USERPROFILE\\Documents\\מאמרים\\כפולים\" -Recurse -Force -ErrorAction SilentlyContinue"],
+  "setup": [
+    "$d = \"$env:USERPROFILE\\Documents\\מאמרים\\כפולים\"; if (Test-Path $d) { Get-ChildItem $d -File | ForEach-Object { $t = Join-Path (Split-Path $d) $_.Name; if (-not (Test-Path $t)) { Move-Item $_.FullName $t } }; Remove-Item $d -Recurse -Force -ErrorAction SilentlyContinue }"
+  ],
   "turns": [
-    {"say": "אני רוצה שנסדר את תיקיית המאמרים", "expect_tools": ["find_duplicates"], "forbid_tools": ["apply_plan"]},
-    {"say": "לא", "forbid_tools": ["apply_plan"]}
+    {
+      "say": "אני רוצה שנסדר את תיקיית המאמרים",
+      "expect_tools": [
+        "find_duplicates"
+      ],
+      "forbid_tools": [
+        "apply_plan"
+      ]
+    },
+    {
+      "say": "לא",
+      "forbid_tools": [
+        "apply_plan"
+      ]
+    }
   ],
   "expect_state": [
-    {"ps": "Test-Path \"$env:USERPROFILE\\Documents\\מאמרים\\כפולים\"", "equals": "False"}
+    {
+      "ps": "Test-Path \"$env:USERPROFILE\\Documents\\מאמרים\\כפולים\"",
+      "equals": "False"
+    }
   ],
   "teardown": [
+    "$d = \"$env:USERPROFILE\\Documents\\מאמרים\\כפולים\"; if (Test-Path $d) { Get-ChildItem $d -File | ForEach-Object { $t = Join-Path (Split-Path $d) $_.Name; if (-not (Test-Path $t)) { Move-Item $_.FullName $t } }; Remove-Item $d -Recurse -Force -ErrorAction SilentlyContinue }",
     "Remove-Item \"$env:USERPROFILE\\Documents\\מאמרים\\תוכנית סידור*.txt\" -ErrorAction SilentlyContinue",
     "Get-Process notepad -ErrorAction SilentlyContinue | Stop-Process -Force"
   ]
