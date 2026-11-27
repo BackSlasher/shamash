@@ -1,0 +1,14 @@
+{
+  "name": "find-open-close",
+  "setup": [],
+  "turns": [
+    {"say": "תמצא לי את המכתב לעירייה", "expect_tools": ["search_documents"], "forbid_tools": ["open_file"]},
+    {"say": "תפתח את זה על הדסקטופ", "expect_tools": ["open_file"]},
+    {"say": "האם הוא פתוח?", "expect_tools": ["is_document_open"]},
+    {"say": "תסגור אותו", "expect_tools": ["close_document"]}
+  ],
+  "expect_state": [
+    {"ps": "(Get-Process WINWORD -ErrorAction SilentlyContinue | Where-Object MainWindowTitle -like '*לעירייה*' | Measure-Object).Count", "equals": "0"}
+  ],
+  "teardown": ["Get-Process WINWORD -ErrorAction SilentlyContinue | ForEach-Object { $null = $_.CloseMainWindow() }"]
+}

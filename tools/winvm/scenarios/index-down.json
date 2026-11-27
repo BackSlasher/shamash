@@ -1,0 +1,9 @@
+{
+  "name": "index-down",
+  "setup": ["Stop-Service WSearch -Force"],
+  "turns": [
+    {"say": "תמצא בבקשה את המכתב לעירייה", "expect_tools": ["search_documents"], "expect_result_prefix": {"search_documents": "error:"}, "only_tools": ["search_documents"]}
+  ],
+  "expect_state": [],
+  "teardown": ["Start-Service WSearch"]
+}

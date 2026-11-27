@@ -1,0 +1,9 @@
+{
+  "name": "mail-list-no-send",
+  "setup": [],
+  "turns": [
+    {"say": "יש לי מיילים חדשים? ספר לי על שלושת האחרונים", "expect_tools": ["list_recent_mail"], "forbid_tools": ["send_draft", "draft_reply"]}
+  ],
+  "expect_state": [],
+  "teardown": []
+}

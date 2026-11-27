@@ -1,0 +1,133 @@
+#!/usr/bin/env python3
+"""Runs one scenario file against the VM (called by run.sh); stdlib only.
+
+    check.py <scenario.json> [--url ws://127.0.0.1:8777/]
+
+Prints PASS or FAIL <name>: <reason> and exits 0/1. Assertions are about tool names, result
+prefixes, timing and end state, never about the model's wording. See README.md for the format.
+"""
+import json
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+HERE = Path(__file__).resolve().parent
+WINVM = HERE.parent
+SSH = str(WINVM / "ssh.sh")
+CLIENT = str(WINVM.parent / "pclink" / "client.sh")
+PCLINK_DIR = r"$env:LocalAppData\Shamash\pclink"
+UTF8 = "[Console]::OutputEncoding=[Text.Encoding]::UTF8; "
+
+
+def ps(cmd: str, timeout: int = 120) -> str:
+    r = subprocess.run([SSH, UTF8 + cmd], capture_output=True, timeout=timeout)
+    return r.stdout.decode("utf-8", "replace").lstrip("\ufeff").strip()
+
+
+def newest_turn() -> tuple[str, dict | None]:
+    """(file name, parsed JSON) of the newest per-turn JSON; ('', None) if there is none."""
+    out = ps(f"$f = Get-ChildItem {PCLINK_DIR}\\*.json -ErrorAction SilentlyContinue | "
+             "Sort-Object LastWriteTime | Select-Object -Last 1; "
+             "if ($f) { $f.Name; Get-Content -Raw $f.FullName -Encoding UTF8 }")
+    if not out:
+        return "", None
+    name, _, body = out.partition("\n")
+    try:
+        return name.strip(), json.loads(body)
+    except json.JSONDecodeError:
+        return name.strip(), None
+
+
+def subsequence(want: list[str], have: list[str]) -> bool:
+    it = iter(have)
+    return all(w in it for w in want)
+
+
+def check_turn(turn: dict, data: dict, wall_ms: int) -> list[str]:
+    errs = []
+    calls = data.get("toolCalls") or []
+    names = [c["name"] for c in calls]
+    ordered = [t for t in turn.get("expect_tools", []) if not t.startswith("any:")]
+    if not subsequence(ordered, names):
+        errs.append(f"expected tools {ordered} as an ordered subsequence, got {names}")
+    for t in turn.get("expect_tools", []):
+        if t.startswith("any:"):
+            alts = t[4:].split("|")
+            if not any(a in names for a in alts):
+                errs.append(f"expected any of {alts}, got {names}")
+    for t in turn.get("forbid_tools", []):
+        if t in names:
+            errs.append(f"forbidden tool {t} was called (calls: {names})")
+    if "only_tools" in turn:
+        extra = [n for n in names if n not in turn["only_tools"]]
+        if extra:
+            errs.append(f"tools outside {turn['only_tools']} were called: {extra}")
+    for tool, prefix in (turn.get("expect_result_prefix") or {}).items():
+        got = [c.get("resultPrefix", "") for c in calls if c["name"] == tool]
+        if not any(g.startswith(prefix) for g in got):
+            errs.append(f"{tool}: expected result prefix {prefix!r}, got {got}")
+    limit = turn.get("max_total_ms")
+    if limit is not None:
+        total = (data.get("timingsMs") or {}).get("total") or wall_ms
+        if total > limit:
+            errs.append(f"turn took {total} ms, limit {limit}")
+    if data.get("error"):
+        errs.append(f"turn reported an error: {data['error']}")
+    return errs
+
+
+def run_turn(turn: dict, url: str) -> list[str]:
+    before, _ = newest_turn()
+    t0 = time.time()
+    r = subprocess.run([CLIENT, url, "--text", turn["say"]], capture_output=True, text=True, timeout=300)
+    wall = int((time.time() - t0) * 1000)
+    if r.returncode != 0:
+        return [f"client exited {r.returncode}: {(r.stdout + r.stderr).strip()[-300:]}"]
+    name, data = before, None
+    for _ in range(15):  # the JSON is written just after `done`
+        name, data = newest_turn()
+        if name != before and data is not None:
+            break
+        time.sleep(1)
+    if name == before or data is None:
+        return ["no new per-turn JSON appeared in the pclink folder"]
+    return check_turn(turn, data, wall)
+
+
+def main() -> int:
+    args = sys.argv[1:]
+    url = "ws://127.0.0.1:8777/"
+    if "--url" in args:
+        i = args.index("--url"); url = args[i + 1]; del args[i:i + 2]
+    sc = json.loads(Path(args[0]).read_text(encoding="utf-8"))
+    name = sc.get("name", Path(args[0]).stem)
+    failures: list[str] = []
+    try:
+        for line in sc.get("setup", []):
+            ps(line)
+        for n, turn in enumerate(sc.get("turns", []), 1):
+            failures += [f"turn {n}: {e}" for e in run_turn(turn, url)]
+        for st in sc.get("expect_state", []):
+            got = ps(st["ps"])
+            if got != st["equals"]:
+                failures.append(f"state {st['ps']!r}: expected {st['equals']!r}, got {got!r}")
+    except Exception as e:  # ssh timeouts and the like
+        failures.append(f"harness error: {type(e).__name__}: {e}")
+    finally:
+        for line in sc.get("teardown", []):
+            try:
+                ps(line)
+            except Exception as e:
+                failures.append(f"teardown {line!r}: {e}")
+    if failures:
+        print(f"FAIL {name}")
+        for f in failures:
+            print(f"  - {f}")
+        return 1
+    print(f"PASS {name}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

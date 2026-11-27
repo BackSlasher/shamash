@@ -1,0 +1,73 @@
+# Scenario suite (win11-office VM)
+
+Replays the owner's phone session of 2026-11-28 and the VM tests of 2026-11-27 as text turns against the real PC service and
+the real model, and asserts tool sequences and end state. Item 2 of the "Regression harness for Office tools" task.
+
+```
+tools/winvm/scenarios/run.sh [--restore] [--install <Setup.exe>] [--only <name>] [--url ws://127.0.0.1:8777/]
+```
+
+The maintainer runs it; it needs podman (for `tools/pclink/client.sh`), the VM up, and:
+
+1. `--restore` restores snapshot `win11-office` (shutdown, copy, boot) and waits for ssh. That snapshot holds no Shamash and no secrets.
+2. The service must be installed with `config.json` deployed (API keys, `allowTextTurns: true`, document roots Desktop and Documents).
+   The script does NOT handle config.json: deploy it yourself after a restore. With `--install <Setup.exe>` the script copies the
+   installer to `~/vm/shamash-win11/shared/`, runs it over ssh with `--silent` and waits ~75 s for the indexer; do the config deploy
+   before running the suite (restore, install by hand or with `--install` alone, deploy config, then run without `--restore`).
+3. The Outlook object-model guard policy from `tools/winvm/README.md` must be set for the mail scenario.
+
+Exit code is non-zero if any scenario failed; each failure prints the failing assertion.
+
+## Format
+
+One JSON file per scenario in this folder, run in file-name order:
+
+```
+{ "name": "...",
+  "setup": ["<powershell line>", ...],
+  "turns": [ { "say": "<hebrew text turn>",
+               "expect_tools": ["search_documents", "open_file", "any:translate_document|open_file"],
+               "forbid_tools": ["apply_plan"],
+               "only_tools": ["search_documents"],
+               "expect_result_prefix": {"search_documents": "error:"},
+               "max_total_ms": 30000 } ],
+  "expect_state": [ { "ps": "<powershell expression>", "equals": "<string>" } ],
+  "teardown": ["<powershell line>", ...] }
+```
+
+- Every `ps` line runs over `tools/winvm/ssh.sh` (UTF-8 output); `expect_state` compares the trimmed output.
+- `expect_tools`: plain names must appear in that order as a subsequence of the turn's tool calls (other calls may sit between).
+  An `any:a|b` entry is satisfied when at least one of the listed tools was called anywhere in the turn.
+- `forbid_tools`: none of these may be called in the turn. `only_tools` (extension): no tool outside this list may be called.
+- `expect_result_prefix`: some call of that tool must have a result starting with the text. The per-turn JSON
+  (`%LocalAppData%\Shamash\pclink\*.json`) carries `resultPrefix`, the first 80 characters of each tool result (added with this suite).
+- `max_total_ms`: bound on `timingsMs.total` of the turn.
+- A turn that reports an `error` in its JSON fails the scenario.
+- Turns of a scenario run in one conversation; the service keeps its history across scenarios too, so a scenario's first turn
+  must make sense without context. Scenarios that change files clean up in `teardown`.
+
+## Scenarios
+
+| file | what it checks |
+| --- | --- |
+| `find-open-close` | search without opening; open; is it open; close; no Word window with the letter left |
+| `translate-existing` | translate the letter to English and open it; the `*English*.docx` exists in `Documents\מכתבים` (removed again) |
+| `mail-list-no-send` | list the three latest mails; never `send_draft` or `draft_reply` |
+| `dedup-ask-then-no` | `find_duplicates` on the articles folder, no `apply_plan`; after "no" still none and no `כפולים` folder |
+| `dedup-yes-undo` | "yes" applies the plan, "put everything back" calls `undo_plan`; `כפולים` is absent or has no files |
+| `index-down` | `WSearch` stopped: `search_documents` returns `error:` and no other tool runs; teardown starts the service, `run.sh` then waits 70 s |
+| `same-name-identity` | two `Reading list.docx` (Desktop and `Documents\Desktop stuff`): open one, the other is reported as "not open; a different file", close |
+| `word-dialog` | "is Word showing something" calls `describe_office_dialogs` |
+
+## Not asserted, and known limits
+
+- Wording of any reply, language, politeness, whether the model asks a clarifying question (only tools and state).
+- Tool results beyond an 80-character prefix; tool inputs.
+- The model may legitimately call `search_documents` twice or add a harmless read; hence ordered-subsequence matching, never exact
+  lists. A turn can still flake when the model decides to ask a question instead of acting; rerun with `--only <name>` before blaming code.
+- The Word Open-dialog case is manual: raise it with Ctrl+F12 through `tools/winvm/sendkeys.py` in the interactive session, then ask
+  "is Word showing something on screen?" (`word-dialog` only covers the no-dialog path, and passes as long as the tool is called).
+- Seed names: the scenarios rely on `tools/seed-docs/gen.py` (`מכתבים/מכתב לעירייה.docx`, `מאמרים/` with duplicates,
+  `Desktop stuff/Reading list.docx`). gen.py does not create a Desktop-root `Reading list.docx`; the `win11-office` snapshot's
+  Desktop copy (used in the 2026-11-27 verification) must exist for `same-name-identity`.
+- Office COM plus forced kills can wedge ssh on this VM (see `tools/winvm/README.md`); teardowns close Word politely and never kill it.

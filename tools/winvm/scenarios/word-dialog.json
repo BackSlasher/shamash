@@ -1,0 +1,9 @@
+{
+  "name": "word-dialog",
+  "setup": [],
+  "turns": [
+    {"say": "וורד מראה משהו על המסך?", "expect_tools": ["describe_office_dialogs"]}
+  ],
+  "expect_state": [],
+  "teardown": []
+}

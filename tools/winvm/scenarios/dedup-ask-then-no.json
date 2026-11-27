@@ -1,0 +1,15 @@
+{
+  "name": "dedup-ask-then-no",
+  "setup": ["Remove-Item \"$env:USERPROFILE\\Documents\\מאמרים\\כפולים\" -Recurse -Force -ErrorAction SilentlyContinue"],
+  "turns": [
+    {"say": "אני רוצה שנסדר את תיקיית המאמרים", "expect_tools": ["find_duplicates"], "forbid_tools": ["apply_plan"]},
+    {"say": "לא", "forbid_tools": ["apply_plan"]}
+  ],
+  "expect_state": [
+    {"ps": "Test-Path \"$env:USERPROFILE\\Documents\\מאמרים\\כפולים\"", "equals": "False"}
+  ],
+  "teardown": [
+    "Remove-Item \"$env:USERPROFILE\\Documents\\מאמרים\\תוכנית סידור*.txt\" -ErrorAction SilentlyContinue",
+    "Get-Process notepad -ErrorAction SilentlyContinue | Stop-Process -Force"
+  ]
+}

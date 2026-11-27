@@ -58,6 +58,7 @@ public class ToolLoopTests
         Assert.Equal("echo", c.Name);
         Assert.Contains("שלום", c.Input);
         Assert.Equal("found:שלום".Length, c.ResultChars);
+        Assert.Equal("found:שלום", c.ResultPrefix);
     }
 
     [Fact]

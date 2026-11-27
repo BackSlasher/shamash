@@ -15,7 +15,7 @@ public interface IAgentTool
 }
 
 /// <summary>One executed tool call, kept in the turn record.</summary>
-public sealed record ToolCallRecord(string Name, string Input, long Ms, int ResultChars);
+public sealed record ToolCallRecord(string Name, string Input, long Ms, int ResultChars, string ResultPrefix = "");
 
 public sealed record ToolUseRequest(string Id, string Name, JsonElement Input);
 
@@ -107,7 +107,7 @@ public static class ToolLoop
             catch (Exception e) { result = $"error: {e.GetType().Name}: {e.Message}"; }
         }
         var input = Compact(use.Input);
-        calls.Add(new ToolCallRecord(use.Name, input, sw.ElapsedMilliseconds, result.Length));
+        calls.Add(new ToolCallRecord(use.Name, input, sw.ElapsedMilliseconds, result.Length, result.Length <= 80 ? result : result[..80]));
         log?.LogInformation("tool: {Name} {Input} -> {Chars} chars in {Ms} ms", use.Name, input, result.Length, sw.ElapsedMilliseconds);
         return result;
     }

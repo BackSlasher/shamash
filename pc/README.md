@@ -305,6 +305,10 @@ Turn times with one tool call were 3-8 s; the translation turn 11 s.
 - Word's classic Open dialog raised with Ctrl+F12 in the interactive session; "Is Word showing something on screen? What does it say?" -> `describe_office_dialogs` (6 ms) read the dialog; the reply named the "Open" window, said the file-name field was empty and advised pressing Cancel. Screenshot confirmed the dialog.
 - Defect seen and fixed in this build: with two roots the folder column did not say which root a file was in (a Desktop file was reported as being in the main Documents folder). The column now starts with the root name and the path tools accept `<rootname>/relative/name`.
 
+## Regression suite
+
+`tools/winvm/scenarios/` replays phone-session scenarios (find/open/close, translate, mail listing, duplicates ask/yes/undo, index down, same-name identity, dialog) as text turns on the win11-office VM and asserts tool sequences, result prefixes and end state, never wording. Run `tools/winvm/scenarios/run.sh [--restore] [--install <Setup.exe>] [--only <name>]` after deploying `config.json`; see its README. The per-turn JSON carries `resultPrefix` (first 80 characters of each tool result) for these checks.
+
 ## Not verified
 
 - The dialog text of Office 2013+ `NUIDialog` alerts (DirectUI; only the title may be readable).

@@ -1,0 +1,11 @@
+{
+  "name": "same-name-identity",
+  "setup": ["Get-Process WINWORD -ErrorAction SilentlyContinue | ForEach-Object { $null = $_.CloseMainWindow() }"],
+  "turns": [
+    {"say": "תפתח את הקובץ Reading list שעל שולחן העבודה", "expect_tools": ["open_file"]},
+    {"say": "האם הקובץ Reading list שבתיקייה Desktop stuff פתוח עכשיו?", "expect_tools": ["is_document_open"], "expect_result_prefix": {"is_document_open": "not open; a different file"}},
+    {"say": "תסגור את Reading list", "expect_tools": ["close_document"]}
+  ],
+  "expect_state": [],
+  "teardown": ["Get-Process WINWORD -ErrorAction SilentlyContinue | ForEach-Object { $null = $_.CloseMainWindow() }"]
+}

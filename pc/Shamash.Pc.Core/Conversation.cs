@@ -94,7 +94,7 @@ public sealed class TurnResult
         timingsMs = new { stt = SttMs, llm = LlmMs, ttsFirstByte = TtsFirstByteMs, ttsTotal = TtsTotalMs, total = TotalMs },
         ttsBytes = TtsBytes,
         error = ErrorStage is null ? null : new { stage = ErrorStage, message = ErrorMessage },
-        toolCalls = ToolCalls.Select(c => new { name = c.Name, input = c.Input, ms = c.Ms, resultChars = c.ResultChars }),
+        toolCalls = ToolCalls.Select(c => new { name = c.Name, input = c.Input, ms = c.Ms, resultChars = c.ResultChars, resultPrefix = c.ResultPrefix }),
         usage = new { calls = Usage.Calls, input = Usage.Input, cacheWrite = Usage.CacheWrite, cacheRead = Usage.CacheRead, output = Usage.Output },
         cancelledAt = CancelledAt,
         done = Done,

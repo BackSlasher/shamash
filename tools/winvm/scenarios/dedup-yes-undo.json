@@ -1,0 +1,16 @@
+{
+  "name": "dedup-yes-undo",
+  "setup": ["Remove-Item \"$env:USERPROFILE\\Documents\\מאמרים\\כפולים\" -Recurse -Force -ErrorAction SilentlyContinue"],
+  "turns": [
+    {"say": "אני רוצה שנסדר את תיקיית המאמרים", "expect_tools": ["find_duplicates"], "forbid_tools": ["apply_plan"]},
+    {"say": "כן", "expect_tools": ["apply_plan"]},
+    {"say": "תחזיר הכל כמו שהיה", "expect_tools": ["undo_plan"]}
+  ],
+  "expect_state": [
+    {"ps": "$d = \"$env:USERPROFILE\\Documents\\מאמרים\\כפולים\"; if (-not (Test-Path $d)) { 'clean' } elseif ((Get-ChildItem $d -Recurse -File | Measure-Object).Count -eq 0) { 'clean' } else { 'files remain' }", "equals": "clean"}
+  ],
+  "teardown": [
+    "Remove-Item \"$env:USERPROFILE\\Documents\\מאמרים\\תוכנית סידור*.txt\" -ErrorAction SilentlyContinue",
+    "Get-Process notepad -ErrorAction SilentlyContinue | Stop-Process -Force"
+  ]
+}
