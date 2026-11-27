@@ -114,6 +114,67 @@ public class OrganizeTests
         Assert.StartsWith("error", Env.Call(e.Undo, $$"""{"plan_id":"{{id}}"}"""));
     }
 
+    private static string PlanId(string findResult) => findResult.Split('\n')[0].Split(' ')[1];
+
+    [Fact]
+    public void Undo_WithoutId_RevertsLastAppliedPlan_AndUnknownIdNamesDefault()
+    {
+        using var e = new Env();
+        var t = new DateTime(2020, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+        e.Write("k.txt", "one two three four five six", t.AddDays(1));
+        var dup = e.Write("d.txt", "one two three four five six", t);
+        var id = PlanId(e.FindIn(e.Root.Path));
+        Env.Call(e.Apply, $$"""{"plan_id":"{{id}}"}""");
+        Assert.False(File.Exists(dup));
+        Assert.StartsWith("error", Env.Call(e.Undo, """{"plan_id":"p99"}"""));
+        Assert.Contains(id, Env.Call(e.Undo, """{"plan_id":"p99"}"""));
+        var u = Env.Call(e.Undo, "{}");
+        Assert.StartsWith($"undone plan {id}: 1 files", u);
+        Assert.True(File.Exists(dup));
+        Assert.StartsWith("error", Env.Call(e.Undo, "{}"));
+    }
+
+    [Fact]
+    public void Apply_WithoutId_AppliesLastCreatedPlan()
+    {
+        using var e = new Env();
+        var t = new DateTime(2020, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+        e.Write("k.txt", "one two three four five six", t.AddDays(1));
+        var dup = e.Write("d.txt", "one two three four five six", t);
+        Assert.StartsWith("error", Env.Call(e.Apply, "{}"));
+        var id = PlanId(e.FindIn(e.Root.Path));
+        var a = Env.Call(e.Apply, "{}");
+        Assert.Contains($"applied plan {id}", a);
+        Assert.Contains("moved: 1", a);
+        Assert.False(File.Exists(dup));
+        Assert.StartsWith("error", Env.Call(e.Apply, "{}"));
+    }
+
+    [Fact]
+    public void TwoPlansApplied_UndoWithoutId_RevertsNewestThenOlder()
+    {
+        using var e = new Env();
+        var t = new DateTime(2020, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+        e.Write("a/k.txt", "one two three four five six", t.AddDays(1));
+        var d1 = e.Write("a/d.txt", "one two three four five six", t);
+        e.Write("b/k.txt", "seven eight nine ten eleven twelve", t.AddDays(1));
+        var d2 = e.Write("b/d.txt", "seven eight nine ten eleven twelve", t);
+        var p1 = PlanId(e.FindIn(Path.Combine(e.Root.Path, "a")));
+        Env.Call(e.Apply, "{}");
+        var p2 = PlanId(e.FindIn(Path.Combine(e.Root.Path, "b")));
+        Env.Call(e.Apply, "{}");
+        Assert.False(File.Exists(d1) || File.Exists(d2));
+
+        var u1 = Env.Call(e.Undo, "{}");
+        Assert.StartsWith($"undone plan {p2}: 1 files", u1);
+        Assert.True(File.Exists(d2));
+        Assert.False(File.Exists(d1));
+        var u2 = Env.Call(e.Undo, "{}");
+        Assert.StartsWith($"undone plan {p1}: 1 files", u2);
+        Assert.True(File.Exists(d1));
+        Assert.StartsWith("error", Env.Call(e.Undo, "{}"));
+    }
+
     [Fact]
     public void Undo_RestoresRest_WhenSomeAlreadyMovedBack()
     {

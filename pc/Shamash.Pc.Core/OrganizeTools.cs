@@ -42,6 +42,12 @@ public sealed class OrganizeStore(string journalPath, Action<string>? openFile =
         }
     }
 
+    /// <summary>The newest plan created in this process that has not been applied yet.</summary>
+    public OrganizePlan? LastUnapplied()
+    {
+        lock (_lock) return _plans.Values.Where(p => !p.Applied).MaxBy(p => int.Parse(p.Id[1..], CultureInfo.InvariantCulture));
+    }
+
     public OrganizePlan? Get(string id) { lock (_lock) return _plans.GetValueOrDefault(id.Trim()); }
 
     public static string DefaultJournalPath()
@@ -269,17 +275,22 @@ public sealed class ApplyPlanTool(OrganizeStore store) : IAgentTool
     public string Name => "apply_plan";
     public string Description =>
         "Carries out a plan from find_duplicates: moves the extra copies into the כפולים subfolder. Never deletes, never overwrites. " +
+        "plan_id is optional: without it the most recently created plan that has not been applied yet is used (plan ids are not remembered between turns, so normally leave it out). " +
         "Call only after the user clearly said yes to that plan in a later turn.";
-    public string InputSchema => """{"type":"object","properties":{"plan_id":{"type":"string"}},"required":["plan_id"]}""";
+    public string InputSchema => """{"type":"object","properties":{"plan_id":{"type":"string","description":"Optional. Default: the most recently created plan not yet applied."}}}""";
 
     public Task<string> RunAsync(JsonElement input, CancellationToken ct) => Task.Run(() => Run(input, ct), ct);
 
     private string Run(JsonElement input, CancellationToken ct)
     {
         var id = ToolText.GetString(input, "plan_id");
-        if (string.IsNullOrWhiteSpace(id)) return "error: plan_id is required";
-        var plan = store.Get(id);
-        if (plan is null) return "error: unknown plan";
+        var plan = string.IsNullOrWhiteSpace(id) ? store.LastUnapplied() : store.Get(id);
+        if (plan is null)
+        {
+            if (string.IsNullOrWhiteSpace(id)) return "error: no plan waiting to be applied; run find_duplicates first";
+            var last = store.LastUnapplied();
+            return "error: unknown plan" + (last is null ? "" : $"; the plan that would be applied by default is {last.Id}");
+        }
         if (plan.Applied) return plan.Undone ? "error: plan was already applied and undone; run find_duplicates again" : "error: plan already applied";
         plan.Applied = true;
 
@@ -305,7 +316,7 @@ public sealed class ApplyPlanTool(OrganizeStore store) : IAgentTool
             return $"error: stopped after {moved.Count} moves ({e.GetType().Name}); undo_plan can restore them";
         }
         var sb = new StringBuilder();
-        sb.Append(CultureInfo.InvariantCulture, $"moved: {moved.Count} files into {OrganizeStore.DuplicatesFolder}\nskipped (missing): {skipped}\n");
+        sb.Append(CultureInfo.InvariantCulture, $"applied plan {plan.Id}\nmoved: {moved.Count} files into {OrganizeStore.DuplicatesFolder}\nskipped (missing): {skipped}\n");
         foreach (var (f, t) in moved.Take(5)) sb.Append(Path.GetRelativePath(plan.Folder, f)).Append(" -> ").Append(Path.GetRelativePath(plan.Folder, t)).Append('\n');
         if (moved.Count > 5) sb.Append("...\n");
         sb.Append("undo is possible with undo_plan");
@@ -331,27 +342,53 @@ public sealed class ApplyPlanTool(OrganizeStore store) : IAgentTool
 public sealed class UndoPlanTool(OrganizeStore store) : IAgentTool
 {
     public string Name => "undo_plan";
-    public string Description => "Reverts a whole deduplication plan applied with apply_plan (all its moves at once). Use this when the user wants the folder back as it was after organising. Not for sorting sittings. Moves the files back using the move journal; never overwrites.";
-    public string InputSchema => """{"type":"object","properties":{"plan_id":{"type":"string"}},"required":["plan_id"]}""";
+    public string Description => "Reverts a whole deduplication plan applied with apply_plan (all its moves at once). Use this when the user wants the folder back as it was after organising. Not for sorting sittings. Moves the files back using the move journal; never overwrites. " +
+        "plan_id is optional: without it the most recently applied plan that has not been undone is reverted (plan ids are not remembered between turns, so normally leave it out). The result names the plan that was undone.";
+    public string InputSchema => """{"type":"object","properties":{"plan_id":{"type":"string","description":"Optional. Default: the most recently applied plan not yet undone."}}}""";
 
     public Task<string> RunAsync(JsonElement input, CancellationToken ct) => Task.Run(() => Run(input, ct), ct);
 
+    private static readonly System.Text.RegularExpressions.Regex PlanTag = new(@"^p\d+$");
+
     private string Run(JsonElement input, CancellationToken ct)
     {
-        var id = ToolText.GetString(input, "plan_id");
-        if (string.IsNullOrWhiteSpace(id)) return "error: plan_id is required";
-        var plan = store.Get(id);
-        if (plan is null) return "error: unknown plan";
-        if (!plan.Applied) return "error: plan was never applied";
-        if (plan.Undone) return "error: plan already undone";
-        if (!File.Exists(store.JournalPath)) return "error: move journal not found";
+        var id = ToolText.GetString(input, "plan_id")?.Trim();
+        if (!File.Exists(store.JournalPath))
+            return string.IsNullOrEmpty(id) ? "error: no applied plan to undo" : "error: unknown plan " + id + "; no applied plan to undo";
 
-        var entries = new List<(string From, string To)>();
+        // Live lines per plan tag: journal lines minus those cancelled by "undo:<tag>" lines (oldest cancelled first).
+        var lines = new List<(string Tag, string From, string To)>();
+        var cancelled = new Dictionary<string, int>();
         foreach (var line in File.ReadAllLines(store.JournalPath, Encoding.UTF8))
         {
-            var parts = line.Split('\t');
-            if (parts.Length == 4 && parts[1] == plan.Id) entries.Add((parts[2], parts[3]));
+            var p = line.Split('\t');
+            if (p.Length != 4) continue;
+            if (p[1].StartsWith("undo:", StringComparison.Ordinal)) cancelled[p[1][5..]] = cancelled.GetValueOrDefault(p[1][5..]) + 1;
+            else if (PlanTag.IsMatch(p[1])) lines.Add((p[1], p[2], p[3]));
         }
+        var live = new List<(string Tag, string From, string To)>();
+        foreach (var l in lines)
+        {
+            if (cancelled.GetValueOrDefault(l.Tag) > 0) { cancelled[l.Tag]--; continue; }
+            live.Add(l);
+        }
+        var defaultTag = live.Count > 0 ? live[^1].Tag : null;
+
+        string tag;
+        if (string.IsNullOrEmpty(id)) tag = defaultTag ?? "";
+        else
+        {
+            tag = id;
+            if (!live.Any(l => l.Tag == tag))
+            {
+                var plan0 = store.Get(id);
+                var why = plan0 is null ? "unknown plan " + id : !plan0.Applied ? "plan " + id + " was never applied" : "plan " + id + " already undone";
+                return "error: " + why + (defaultTag is null ? "; no applied plan to undo" : $"; the plan that would be undone by default is {defaultTag}");
+            }
+        }
+        if (tag.Length == 0) return "error: no applied plan to undo";
+
+        var entries = live.Where(l => l.Tag == tag).Select(l => (l.From, l.To)).ToList();
         var restored = 0;
         var problems = new List<string>();
         var alreadyBack = 0;
@@ -361,23 +398,30 @@ public sealed class UndoPlanTool(OrganizeStore store) : IAgentTool
             {
                 ct.ThrowIfCancellationRequested();
                 var (from, to) = entries[i];
-                if (File.Exists(from) && !File.Exists(to)) { alreadyBack++; continue; }
-                if (File.Exists(from)) { problems.Add($"{Path.GetFileName(from)}: original place is taken"); continue; }
-                if (!File.Exists(to)) { problems.Add($"{Path.GetFileName(to)}: not found in {OrganizeStore.DuplicatesFolder}"); continue; }
-                Directory.CreateDirectory(Path.GetDirectoryName(from)!);
-                File.Move(to, from, overwrite: false);
-                restored++;
+                if (File.Exists(from) && !File.Exists(to)) alreadyBack++;
+                else if (File.Exists(from)) problems.Add($"{Path.GetFileName(from)}: original place is taken");
+                else if (!File.Exists(to)) problems.Add($"{Path.GetFileName(to)}: not found in {OrganizeStore.DuplicatesFolder}");
+                else
+                {
+                    Directory.CreateDirectory(Path.GetDirectoryName(from)!);
+                    File.Move(to, from, overwrite: false);
+                    restored++;
+                }
+                File.AppendAllText(store.JournalPath, string.Join('\t', DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture), "undo:" + tag, Clean(to), Clean(from)) + "\n", new UTF8Encoding(false));
             }
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
             return $"error: stopped after {restored} restores ({e.GetType().Name})";
         }
-        plan.Undone = true;
+        var plan = store.Get(tag);
+        if (plan is not null) plan.Undone = true;
         var sb = new StringBuilder();
-        sb.Append(CultureInfo.InvariantCulture, $"restored: {restored} files\nnot restored: {problems.Count}\n");
+        sb.Append(CultureInfo.InvariantCulture, $"undone plan {tag}: {restored} files went back\nrestored: {restored} files\nnot restored: {problems.Count}\n");
         if (alreadyBack > 0) sb.Append(CultureInfo.InvariantCulture, $"already in place: {alreadyBack} files\n");
-        foreach (var p in problems.Take(5)) sb.Append(p).Append('\n');
+        foreach (var pr in problems.Take(5)) sb.Append(pr).Append('\n');
         return sb.ToString().TrimEnd();
     }
+
+    private static string Clean(string s) => s.Replace('\t', ' ').Replace('\n', ' ');
 }
