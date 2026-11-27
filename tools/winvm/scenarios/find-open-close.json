@@ -8,7 +8,8 @@
     {"say": "תסגור אותו", "expect_tools": ["close_document"]}
   ],
   "expect_state": [
-    {"ps": "(Get-Process WINWORD -ErrorAction SilentlyContinue | Where-Object MainWindowTitle -like '*לעירייה*' | Measure-Object).Count", "equals": "0"}
+    {"ps": "(Get-Process WINWORD -ErrorAction SilentlyContinue | Where-Object MainWindowTitle -like '*לעירייה*' | Measure-Object).Count", "equals": "0"},
+    {"ps": "(Get-Process WINWORD -ErrorAction SilentlyContinue | Measure-Object).Count", "equals": "0"}
   ],
   "teardown": ["Get-Process WINWORD -ErrorAction SilentlyContinue | ForEach-Object { $null = $_.CloseMainWindow() }"]
 }

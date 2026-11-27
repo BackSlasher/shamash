@@ -161,6 +161,17 @@ public class OfficeTests
     [InlineData(null, "ask")] [InlineData("", "ask")] [InlineData("YES", "yes")] [InlineData(" no ", "no")] [InlineData("x", null)]
     public void NormalizeSave(string? input, string? expected) => Assert.Equal(expected, CloseDocumentTool.NormalizeSave(input));
 
+    [Theory]
+    [InlineData(0, true)] [InlineData(1, false)] [InlineData(3, false)]
+    public void CloseDocument_QuitsWordOnlyWhenNoDocumentRemains(int remaining, bool quit) => Assert.Equal(quit, CloseDocumentTool.ShouldQuit(remaining));
+
+    [Fact]
+    public void CloseDocument_QuitNoteInResult()
+    {
+        Assert.Equal("saved and closed; Word closed", CloseDocumentTool.WithQuitNote("saved and closed", true));
+        Assert.Equal("saved and closed", CloseDocumentTool.WithQuitNote("saved and closed", false));
+    }
+
     [Fact]
     public void OfficeCom_TimeoutAndErrors()
     {

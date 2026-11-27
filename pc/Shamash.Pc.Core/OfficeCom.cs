@@ -170,6 +170,19 @@ public static class WordAutomation
         return null;
     }
 
+    /// <summary>After a successful close in the user's Word: quits Word when no document is left. Never throws; true only when Quit was issued.</summary>
+    private static bool QuitIfEmpty(dynamic app, dynamic docs)
+    {
+        try
+        {
+            int count = docs.Count;
+            if (!CloseDocumentTool.ShouldQuit(count)) return false;
+            app.Quit(SaveChanges: 0);
+            return true;
+        }
+        catch (Exception) { return false; }
+    }
+
     /// <summary>Closes the document if Word has it open. Null when Word is not running or does not have it (the caller falls back to the window). save: ask, yes or no.</summary>
     public static string? Close(string path, string save)
     {
@@ -182,14 +195,14 @@ public static class WordAutomation
             doc = FindOpen(docs, path);
             if (doc is null) return null;
             bool saved = doc.Saved;
-            if (saved) { doc.Close(SaveChanges: 0); return "closed (there were no unsaved changes)"; }
+            if (saved) { doc.Close(SaveChanges: 0); return CloseDocumentTool.WithQuitNote("closed (there were no unsaved changes)", QuitIfEmpty(app, docs)); }
             switch (save)
             {
-                case "no": doc.Close(SaveChanges: 0); return "closed without saving, the unsaved changes were discarded";
+                case "no": doc.Close(SaveChanges: 0); return CloseDocumentTool.WithQuitNote("closed without saving, the unsaved changes were discarded", QuitIfEmpty(app, docs));
                 case "yes":
                     if ((bool)doc.ReadOnly) return "error: the document is read-only, so it cannot be saved; not closed";
                     doc.Close(SaveChanges: -1);
-                    return "saved and closed";
+                    return CloseDocumentTool.WithQuitNote("saved and closed", QuitIfEmpty(app, docs));
                 default: return "unsaved changes; ask the user whether to save (not closed)";
             }
         }
@@ -299,10 +312,16 @@ public sealed class CloseDocumentTool(IReadOnlyList<string> roots) : IAgentTool
     public string Name => "close_document";
     public string Description =>
         "Closes an open document. In Word it checks for unsaved changes first: with save=ask (default) it does NOT close and says 'unsaved changes' so you can ask the user aloud whether to save, then call again with save=yes or no. " +
-        "Other programs get a close request to their window and may show their own save prompt on screen. Never discards changes unless save=no.";
+        "Other programs get a close request to their window and may show their own save prompt on screen. When that was the last open document, Word itself is closed too (the result says 'Word closed'). Never discards changes unless save=no.";
     public string InputSchema => """
         {"type":"object","properties":{"path":{"type":"string","description":"Full path, or folder/name as listed by search_documents"},"save":{"type":"string","enum":["ask","yes","no"],"description":"What to do with unsaved changes, default ask"}},"required":["path"]}
         """;
+
+    /// <summary>Word is quit after a close only when no document remains open.</summary>
+    public static bool ShouldQuit(int remainingDocuments) => remainingDocuments == 0;
+
+    /// <summary>Appends the note that Word itself was closed, so the model can say so.</summary>
+    public static string WithQuitNote(string result, bool quit) => quit ? result + "; Word closed" : result;
 
     public static string? NormalizeSave(string? s) => string.IsNullOrWhiteSpace(s) ? "ask" : s.Trim().ToLowerInvariant() is "ask" or "yes" or "no" ? s.Trim().ToLowerInvariant() : null;
 
