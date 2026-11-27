@@ -32,8 +32,9 @@ The maintainer runs it; it needs podman (for `tools/pclink/client.sh`), the VM u
 
 6. Isolation. Besides the history reset, `check.py` runs a "clean desktop" step over ssh before each scenario's `setup`: it calls
    `CloseMainWindow()` on every WINWORD, EXCEL and notepad process, waits up to 8 s (polling every 1 s) for them to exit, then
-   Stop-Processes only Notepad windows whose title contains `תוכנית` (plan files). Word is never killed (that creates Document
-   Recovery entries); if it is still running (e.g. an unsaved-changes prompt) the step prints `WARNING: Word still running (title: ...)`
+   Stop-Processes only Notepad windows whose title contains `תוכנית` (plan files). A Word or Excel with a window is never killed (that creates Document
+   Recovery entries), but one with no window at all (`MainWindowHandle` 0, which ignores `CloseMainWindow` forever) is Stop-Processed
+   and reported as `killed window-less Word pid N`; if Word still has a window (e.g. an unsaved-changes prompt) the step prints `WARNING: Word still running (title: ...)`
    and the scenario goes on. A scenario can skip the step with `"keep_apps": true`. `run.sh` runs the same step once at the very start,
    before `--install` (the installer restarts the service, not Word), so a run never inherits the previous run's windows
    (`check.py --clean-only` does just that).

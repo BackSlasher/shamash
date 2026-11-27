@@ -27,13 +27,16 @@ def ps(cmd: str, timeout: int = 120) -> str:
 
 
 # Gracefully closes leftover app windows so one scenario (or run) cannot leak state into the next.
-# Word is never Stop-Processed (killing it creates Document Recovery entries); Notepad is, after the
-# grace period, only when its title contains "תוכנית" (plan files).
+# A Word/Excel that still has a window is never killed (killing creates Document Recovery entries);
+# one with MainWindowHandle 0 (window-less, ignores CloseMainWindow forever) is Stop-Processed.
+# Notepad is, after the grace period, only when its title contains "תוכנית" (plan files).
 CLEAN_DESKTOP_PS = (
     "$names = 'WINWORD','EXCEL','notepad'; "
     "Get-Process $names -ErrorAction SilentlyContinue | ForEach-Object { $null = $_.CloseMainWindow() }; "
     "for ($i = 0; $i -lt 8; $i++) { if (-not (Get-Process $names -ErrorAction SilentlyContinue)) { break }; Start-Sleep -Seconds 1 }; "
     "Get-Process notepad -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowTitle -like '*תוכנית*' } | Stop-Process -Force; "
+    "Get-Process WINWORD,EXCEL -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowHandle -eq 0 } | "
+    "ForEach-Object { 'killed window-less ' + $(if ($_.ProcessName -eq 'EXCEL') {'Excel'} else {'Word'}) + ' pid ' + $_.Id; Stop-Process -Id $_.Id -Force }; "
     "$w = Get-Process WINWORD -ErrorAction SilentlyContinue; "
     "if ($w) { 'WARNING: Word still running (title: ' + (($w | ForEach-Object { $_.MainWindowTitle }) -join '; ') + ')' }"
 )

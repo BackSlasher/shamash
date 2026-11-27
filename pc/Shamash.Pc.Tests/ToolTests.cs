@@ -256,6 +256,26 @@ public class DocumentToolTests
     }
 
     [Fact]
+    public async Task Search_DropsHitsForDeletedFiles_AndNotesThem()
+    {
+        using var d = new TempDir();
+        var real = d.File("real.docx");
+        File.WriteAllText(real, "x");
+        var gone = Path.Combine(d.Path, "gone.docx");
+        var m = new DateTime(2026, 11, 20);
+        var tool = new SearchDocumentsTool([d.Path], new FakeIndex([new("real.docx", real, m, 1024), new("gone.docx", gone, m, 1024)]));
+        var r = await tool.RunAsync(J("""{"query":"x"}"""), default);
+        Assert.Contains("real.docx", r);
+        Assert.DoesNotContain("gone.docx", r);
+        Assert.Contains("(index entries for files that no longer exist were ignored: 1)", r);
+
+        var all = new SearchDocumentsTool([d.Path], new FakeIndex([new("gone.docx", gone, m, 1024)]));
+        var r2 = await all.RunAsync(J("""{"query":"x"}"""), default);
+        Assert.StartsWith("no documents found", r2);
+        Assert.Contains("no longer exist were ignored", r2);
+    }
+
+    [Fact]
     public async Task Search_IndexHits_AreFormattedLines()
     {
         using var d = new TempDir();

@@ -370,7 +370,7 @@ public sealed class SearchDocumentsTool(IReadOnlyList<string> roots, IDocumentIn
         "Searches the user's document folders through the Windows Search index, by file name and by content. query is a few keywords (Hebrew or English), not a sentence. " +
         "Give Hebrew words without the prefix letters ה ו ב ל מ ש כ when possible (ירושלים, not בירושלים). " +
         "If a search returns nothing, retry once with a shorter or alternative form of the words before concluding the file does not exist. " +
-        "Returns numbered lines: name | folder | modified date | size KB, newest first. The folder column starts with the root folder name (Desktop or Documents), then the subfolders; pass it as folder/name to the other tools. " +
+        "Returns numbered lines: name | folder | modified date | size KB, newest first (hits for files deleted but still in the lagging index are dropped and noted). The folder column starts with the root folder name (Desktop or Documents), then the subfolders; pass it as folder/name to the other tools. " +
         "If it returns an error saying the search index is not available, tell the user so plainly and ask them to try again in a minute; do not guess file names.";
     public string InputSchema => """
         {"type":"object","properties":{"query":{"type":"string","description":"Keywords to look for in names and content"},"kind":{"type":"string","enum":["any","docx","pdf","xlsx","txt"],"description":"File type filter, default any"},"max":{"type":"integer","description":"Number of results, 1 to 20, default 10"}},"required":["query"]}
@@ -404,8 +404,11 @@ public sealed class SearchDocumentsTool(IReadOnlyList<string> roots, IDocumentIn
         try { hits = [.. _index.Search(roots, query, words, kind, max, ct).Where(h => !FileSkip.IsIgnored(h.FullPath))]; }
         catch (OperationCanceledException) { throw; }
         catch (Exception) { return Unavailable; }
+        // The index lags deletions: drop hits whose file is already gone.
+        var stale = hits.RemoveAll(h => !File.Exists(h.FullPath));
+        var staleNote = stale > 0 ? $"\n(index entries for files that no longer exist were ignored: {stale})" : "";
         hits = Rank(hits);
-        if (hits.Count == 0) return "no documents found";
+        if (hits.Count == 0) return "no documents found" + staleNote;
 
         var sb = new StringBuilder();
         var n = 0;
@@ -424,7 +427,7 @@ public sealed class SearchDocumentsTool(IReadOnlyList<string> roots, IDocumentIn
               .Append(h.Modified.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)).Append(" | ")
               .Append(((h.Size + 1023) / 1024).ToString(CultureInfo.InvariantCulture)).Append(" KB\n");
         }
-        return sb.ToString().TrimEnd('\n');
+        return sb.ToString().TrimEnd('\n') + staleNote;
     }
 
     /// <summary>Within a 30-day window .docx first, then other text formats, then .doc/.rtf/.pdf; newest first inside each step. Stable.</summary>

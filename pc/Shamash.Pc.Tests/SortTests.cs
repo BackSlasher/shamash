@@ -246,6 +246,7 @@ public class SortTests
         var find = OrganizeStore.CreateTools([e.Desktop], e.Organize)[0];
         Assert.Contains("scanned: 1 files", find.RunAsync(J(Obj(("folder", e.Salad))), default).GetAwaiter().GetResult());
         string[] names = ["real.txt", "~$real.docx", "link-keyword.lnk"];
+        foreach (var n in names) File.WriteAllText(Path.Combine(e.Desktop, n), "x"); // search drops hits whose file is gone
         var search = new SearchDocumentsTool([e.Desktop], new ListIndex(names.Select(n => new DocumentHit(n, Path.Combine(e.Desktop, n), T0, 10)).ToList()));
         var sr = search.RunAsync(J("""{"query":"keyword"}"""), default).GetAwaiter().GetResult();
         Assert.Contains("real.txt", sr);
