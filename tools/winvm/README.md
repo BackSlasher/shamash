@@ -137,3 +137,14 @@ Files in `tools/winvm/office/`: `config.xml`, `install-office.ps1`, `outlook.prf
 - Snapshot `win11-office` (saved 2026-11-27 02:51): seeded corpus + real Desktop sample from the saba mirror + the PST +
   Office 2016 Word/Excel/Outlook; no Shamash, no secrets, no Outlook profile. It predates the profile above, so after a
   restore the profile steps (PRF import, registry path, wizard click-through) must be redone, or take a new snapshot once done.
+
+### Outlook object-model guard on the VM
+
+Outlook warns "A program is trying to access e-mail address information" when Security Center does not report a
+current antivirus. On the VM that happens on every boot for the first minutes (Defender itself reports signature age 0),
+so every deploy applies the policy that disables the warning for this user:
+`HKCU:\Software\Policies\Microsoft\Office\16.0\Outlook\Security` with `ObjectModelGuard=2` and `AdminSecurityMode=3`
+(DWORDs), and deletes `HKCU:\Software\Microsoft\Office\16.0\Outlook\Resiliency` so a killed Outlook does not ask
+about safe mode. The `win11-office` snapshot (re-saved 2026-11-27 03:54) already holds the Outlook profile "Shamash"
+(PST only) but not this policy; set it after a restore. On the owner's PC the policy is deliberately not applied unless
+the prompt proves recurrent there.
