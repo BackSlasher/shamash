@@ -107,6 +107,9 @@ public sealed record HeartbeatBody(
 
 public sealed class HomeAuthException(string message) : Exception(message);
 
+/// <summary>The server still rejects the timestamp after the clock offset was applied; not a registration problem.</summary>
+public sealed class HomeClockException(string message) : Exception(message);
+
 /// <summary>HTTP client for the home server. Does not retry; <see cref="HomeLinkService"/> owns the schedule.</summary>
 public sealed class HomeClient
 {
@@ -116,9 +119,11 @@ public sealed class HomeClient
     private readonly HomeKey _key;
     private readonly string _clientFile;
     private readonly Func<DateTimeOffset> _clock;
+    private readonly ILogger? _log;
 
-    public HomeClient(HttpClient http, Uri baseUri, string dir, HomeKey key, Func<DateTimeOffset>? clock = null)
+    public HomeClient(HttpClient http, Uri baseUri, string dir, HomeKey key, Func<DateTimeOffset>? clock = null, ILogger? log = null)
     {
+        _log = log;
         _http = http;
         _key = key;
         _clock = clock ?? (() => DateTimeOffset.UtcNow);
@@ -129,6 +134,9 @@ public sealed class HomeClient
 
     public Uri BaseUri { get; }
     public string? ClientId { get; private set; }
+
+    /// <summary>Server unix time minus local unix time, applied to every signature so a wrong PC clock cannot break the link.</summary>
+    public long ClockOffsetSeconds { get; private set; }
 
     private string? ReadClientId()
     {
@@ -163,18 +171,56 @@ public sealed class HomeClient
         File.WriteAllText(_clientFile, JsonSerializer.Serialize(new { clientId = id, registeredAt = _clock().UtcDateTime.ToString("o") }));
     }
 
-    /// <summary>Signed heartbeat. Throws <see cref="HomeAuthException"/> on 401 (unknown, revoked or bad signature).</summary>
+    /// <summary>
+    /// Signed heartbeat. A 401 carrying serverUnix (stale timestamp) sets the clock offset and is retried once at once;
+    /// any other 401 (unknown, revoked or bad signature) throws <see cref="HomeAuthException"/>.
+    /// </summary>
     public async Task<HeartbeatReply> HeartbeatAsync(HeartbeatBody hb, CancellationToken ct)
     {
         if (ClientId is null) throw new InvalidOperationException("not registered");
         var body = JsonSerializer.SerializeToUtf8Bytes(hb, Json);
-        using var req = new HttpRequestMessage(HttpMethod.Post, new Uri(BaseUri, "api/heartbeat")) { Content = JsonBody(body) };
-        foreach (var (k, v) in _key.SignHeaders(ClientId, body, _clock())) req.Headers.TryAddWithoutValidation(k, v);
-        using var resp = await _http.SendAsync(req, ct);
-        if (resp.StatusCode == HttpStatusCode.Unauthorized) throw new HomeAuthException("heartbeat refused (401)");
-        resp.EnsureSuccessStatusCode();
-        using var doc = JsonDocument.Parse(await resp.Content.ReadAsByteArrayAsync(ct));
+        for (var attempt = 0; ; attempt++)
+        {
+            using var req = new HttpRequestMessage(HttpMethod.Post, new Uri(BaseUri, "api/heartbeat")) { Content = JsonBody(body) };
+            foreach (var (k, v) in _key.SignHeaders(ClientId, body, _clock().AddSeconds(ClockOffsetSeconds))) req.Headers.TryAddWithoutValidation(k, v);
+            using var resp = await _http.SendAsync(req, ct);
+            if (resp.StatusCode == HttpStatusCode.Unauthorized)
+            {
+                var serverUnix = ReadServerUnix(await resp.Content.ReadAsByteArrayAsync(ct));
+                if (serverUnix is null) throw new HomeAuthException("heartbeat refused (401)");
+                if (attempt > 0) throw new HomeClockException("heartbeat refused (401) even with the server clock applied");
+                ClockOffsetSeconds = serverUnix.Value - _clock().ToUnixTimeSeconds();
+                _log?.LogInformation("home: clock offset {Offset} s (server time used for signing)", ClockOffsetSeconds);
+                continue;
+            }
+            resp.EnsureSuccessStatusCode();
+            return ParseReply(await resp.Content.ReadAsByteArrayAsync(ct));
+        }
+    }
+
+    private static long? ReadServerUnix(byte[] body)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(body);
+            return doc.RootElement.ValueKind == JsonValueKind.Object && doc.RootElement.TryGetProperty("serverUnix", out var p)
+                && p.ValueKind == JsonValueKind.Number && p.TryGetInt64(out var v) ? v : null;
+        }
+        catch (JsonException) { return null; }
+    }
+
+    private HeartbeatReply ParseReply(byte[] bytes)
+    {
+        using var doc = JsonDocument.Parse(bytes);
         var root = doc.RootElement;
+        if (root.TryGetProperty("serverTime", out var st) && st.ValueKind == JsonValueKind.String
+            && DateTimeOffset.TryParse(st.GetString(), System.Globalization.CultureInfo.InvariantCulture,
+                System.Globalization.DateTimeStyles.AssumeUniversal, out var server))
+        {
+            var local = _clock().ToUnixTimeSeconds();
+            var diff = server.ToUnixTimeSeconds() - (local + ClockOffsetSeconds);
+            if (Math.Abs(diff) > 60) ClockOffsetSeconds = server.ToUnixTimeSeconds() - local;
+        }
         string? desired = root.TryGetProperty("desiredVersion", out var d) && d.ValueKind == JsonValueKind.String ? d.GetString() : null;
         var hold = root.TryGetProperty("hold", out var h) && h.ValueKind == JsonValueKind.True;
         var cmds = new List<HomeCommand>();
@@ -278,7 +324,7 @@ public sealed class HomeLinkService : BackgroundService
         var key = HomeKey.LoadOrCreate(dir);
         var http = _handler is null ? SharedHttp.Client : new HttpClient(_handler, disposeHandler: false) { Timeout = TimeSpan.FromSeconds(30) };
         var url = settings.HomeUrl!.TrimEnd('/') + "/";
-        return new HomeClient(http, new Uri(url), dir, key);
+        return new HomeClient(http, new Uri(url), dir, key, null, _log);
     }
 
     // One log line per change between ok and failed (failure text changes do not repeat the line).

@@ -75,12 +75,26 @@ def test_heartbeat_rejections(env):
     cid = register(api, pem).json()["clientId"]
     body = b"{}"
     other, _ = new_key()
-    assert signed(api, cid, other, body).status_code == 401
-    assert signed(api, cid, k, body, ts=int(time.time()) - 400).status_code == 401
-    assert signed(api, "c_nope", k, body).status_code == 401
+    r = signed(api, cid, other, body)
+    assert (r.status_code, r.json()) == (401, {"error": "bad signature"})
+    r = signed(api, cid, k, body, ts=int(time.time()) - 400)
+    assert r.status_code == 401 and r.json()["error"] == "stale timestamp"
+    assert abs(r.json()["serverUnix"] - time.time()) < 5 and r.json()["serverTime"].endswith("Z")
+    r = signed(api, "c_nope", k, body)
+    assert (r.status_code, r.json()) == (401, {"error": "unknown client"})
     assert signed(api, cid, k, body).status_code == 200
     db.revoke(cid)
-    assert signed(api, cid, k, body).status_code == 401
+    r = signed(api, cid, k, body)
+    assert (r.status_code, r.json()) == (401, {"error": "revoked"})
+
+
+def test_stale_is_only_revealed_after_signature_check(env):
+    _, api, _ = env
+    k, pem = new_key()
+    cid = register(api, pem).json()["clientId"]
+    other, _ = new_key()
+    r = signed(api, cid, other, b"{}", ts=int(time.time()) - 7200)
+    assert r.json() == {"error": "bad signature"}
 
 
 def test_ui_renders_client(env):

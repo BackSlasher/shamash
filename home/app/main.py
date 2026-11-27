@@ -5,6 +5,7 @@ Run: `python -m app.main`  (HOME_MODE=all|api|ui selects listeners; default all)
 import asyncio
 import json
 import os
+import time
 from contextlib import asynccontextmanager
 
 import uvicorn
@@ -25,19 +26,29 @@ def create_api_app(db: Database, enrol_token: str, retention_days: int = 365) ->
 
     app = FastAPI(title="Shamash home API", docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan)
 
-    def unauthorized():
-        return JSONResponse({"error": "unauthorized"}, status_code=401)
+    def unauthorized(reason: str):
+        content = {"error": reason}
+        if reason == "stale timestamp":
+            now = time.time()
+            content["serverTime"] = now_iso()
+            content["serverUnix"] = int(now)
+        return JSONResponse(content, status_code=401)
 
     async def authenticate(request: Request):
-        """Returns (client_row, body) or (None, None)."""
+        """Returns (client_row, body, None) or (None, None, reason)."""
         body = await request.body()
         client = db.get_client(request.headers.get("X-Shamash-Client", ""))
-        if client is None or client["revoked"]:
-            return None, None
-        if not auth.verify(client["public_key_pem"], request.headers.get("X-Shamash-Timestamp", ""), body,
-                           request.headers.get("X-Shamash-Signature", "")):
-            return None, None
-        return client, body
+        if client is None:
+            return None, None, "unknown client"
+        if client["revoked"]:
+            return None, None, "revoked"
+        result = auth.check(client["public_key_pem"], request.headers.get("X-Shamash-Timestamp", ""), body,
+                            request.headers.get("X-Shamash-Signature", ""))
+        if result == "stale":
+            return None, None, "stale timestamp"
+        if result != "ok":
+            return None, None, "bad signature"
+        return client, body, None
 
     @app.get("/api/health")
     def health():
@@ -62,9 +73,9 @@ def create_api_app(db: Database, enrol_token: str, retention_days: int = 365) ->
 
     @app.post("/api/heartbeat")
     async def heartbeat(request: Request):
-        client, body = await authenticate(request)
+        client, body, reason = await authenticate(request)
         if client is None:
-            return unauthorized()
+            return unauthorized(reason)
         try:
             payload = json.loads(body or b"{}")
             if not isinstance(payload, dict):

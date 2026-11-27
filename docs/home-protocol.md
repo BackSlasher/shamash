@@ -26,6 +26,20 @@ The signed message is the UTF-8 bytes of `"<timestamp>\n<lowercase hex SHA-256 o
 empty: hash of zero bytes). The server rejects timestamps more than 300 s from its clock, unknown or revoked clients,
 and bad signatures with `401`. Replays inside the window are accepted (calls are idempotent).
 
+The `401` body says why, as JSON `{"error": ...}`:
+
+- `"unknown client"`: no such clientId. The client registers again.
+- `"revoked"`: the client was revoked. The client registers again.
+- `"bad signature"`: the signature does not verify against the registered key (or the timestamp is not an integer).
+- `"stale timestamp"`: the signature is valid but the timestamp is outside the window. This body also carries
+  `"serverTime": "<ISO 8601 UTC>"` and `"serverUnix": <int>`. The server checks the signature first, so only the key
+  holder ever sees this answer.
+
+A client with a wrong clock must not break the link: on a `401` with `serverUnix` it keeps the offset
+(`serverUnix` minus its own unix time), signs with `now + offset` from then on, and retries the same request once
+without re-registering. Clients may also take the offset from `serverTime` in any successful heartbeat reply. Only a
+`401` without `serverUnix` calls for re-registration.
+
 ## Endpoints (JSON, `Content-Type: application/json`)
 
 ### `POST /api/register`

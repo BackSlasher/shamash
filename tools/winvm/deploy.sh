@@ -24,6 +24,9 @@ for _ in $(seq 1 40); do
 done
 "$ssh" '"up"' 2>/dev/null | grep -q up || { echo "VM ssh not reachable" >&2; exit 3; }
 
+# The snapshot's clock is wrong by the host's UTC offset; signed heartbeats are rejected past 300 s of skew.
+"$ssh" "Set-Date ([DateTimeOffset]::Parse('$(date -u +%Y-%m-%dT%H:%M:%SZ)').LocalDateTime) | Out-Null; 'vm clock set'" | tail -1
+
 echo "config"
 python3 tools/pc-config.py "$vm_dir/shared/config.json" --llm claude >/dev/null
 HOME_URL="$home_url" HOME_TOKEN="$home_token" python3 - "$vm_dir/shared/config.json" <<'EOF'

@@ -125,6 +125,83 @@ public class HomeLinkTests : IDisposable
         Assert.Equal(1, h2.Calls.Count(c => c.Req.RequestUri!.AbsolutePath == "/api/register"));
     }
 
+    private static HttpResponseMessage Unauthorized(string json) =>
+        new(HttpStatusCode.Unauthorized) { Content = new StringContent(json, Encoding.UTF8, "application/json") };
+
+    [Fact]
+    public async Task StaleTimestamp401_AppliesOffsetAndRetriesOnce_WithoutReregistering()
+    {
+        File.WriteAllText(Path.Combine(_dir, "home-client.json"), """{"clientId":"c_x"}""");
+        var local = DateTimeOffset.FromUnixTimeSeconds(1790000000);
+        var serverUnix = local.ToUnixTimeSeconds() + 7200;
+        var beats = 0;
+        var h = new FakeHandler((r, b) =>
+        {
+            if (r.RequestUri!.AbsolutePath == "/api/register") throw new InvalidOperationException("must not re-register");
+            beats++;
+            return beats == 1 ? Unauthorized($$"""{"error":"stale timestamp","serverTime":"x","serverUnix":{{serverUnix}}}""") : Ok("""{"desiredVersion":null,"hold":false,"commands":[]}""");
+        });
+        var svc = new HomeLinkService(NullLogger<HomeLinkService>.Instance, Settings(), h, _dir);
+        var client = new HomeClient(new HttpClient(h), new Uri("https://home.example/"), _dir, HomeKey.LoadOrCreate(_dir), () => local);
+        await client.HeartbeatAsync(HomeLinkService.BuildBody(), default);
+        Assert.Equal(7200, client.ClockOffsetSeconds);
+        Assert.Equal(2, h.Calls.Count);
+        Assert.Equal("1790000000", h.Calls[0].Req.Headers.GetValues("X-Shamash-Timestamp").Single());
+        Assert.Equal(serverUnix.ToString(), h.Calls[1].Req.Headers.GetValues("X-Shamash-Timestamp").Single());
+
+        // Later calls keep using the offset.
+        await client.HeartbeatAsync(HomeLinkService.BuildBody(), default);
+        Assert.Equal(serverUnix.ToString(), h.Calls[2].Req.Headers.GetValues("X-Shamash-Timestamp").Single());
+
+        // Through the service: succeeds, no registration call.
+        beats = 0;
+        Assert.True(await svc.TickAsync(Settings(), default));
+        Assert.DoesNotContain(h.Calls, c => c.Req.RequestUri!.AbsolutePath == "/api/register");
+    }
+
+    [Fact]
+    public async Task StaleTimestamp401_StillRefusedAfterOffset_DoesNotLoopOrReregister()
+    {
+        File.WriteAllText(Path.Combine(_dir, "home-client.json"), """{"clientId":"c_x"}""");
+        var h = new FakeHandler((r, b) => Unauthorized("""{"error":"stale timestamp","serverUnix":1790000000}"""));
+        var svc = new HomeLinkService(NullLogger<HomeLinkService>.Instance, Settings(), h, _dir);
+        Assert.False(await svc.TickAsync(Settings(), default));
+        Assert.Equal(2, h.Calls.Count);
+        Assert.True(File.Exists(Path.Combine(_dir, "home-client.json")));
+    }
+
+    [Fact]
+    public async Task UnknownClient401_Reregisters()
+    {
+        File.WriteAllText(Path.Combine(_dir, "home-client.json"), """{"clientId":"c_old"}""");
+        var beats = 0; var registers = 0;
+        var h = new FakeHandler((r, b) =>
+        {
+            if (r.RequestUri!.AbsolutePath == "/api/register") { registers++; return Ok("""{"clientId":"c_new"}"""); }
+            return ++beats == 1 ? Unauthorized("""{"error":"unknown client"}""") : Ok(Reply);
+        });
+        var svc = new HomeLinkService(NullLogger<HomeLinkService>.Instance, Settings(), h, _dir);
+        Assert.True(await svc.TickAsync(Settings(), default));
+        Assert.Equal(1, registers);
+        Assert.Equal(2, beats);
+    }
+
+    [Fact]
+    public async Task ReplyServerTime_AdjustsOffsetOnlyBeyond60Seconds()
+    {
+        File.WriteAllText(Path.Combine(_dir, "home-client.json"), """{"clientId":"c_x"}""");
+        var local = DateTimeOffset.FromUnixTimeSeconds(1790000000);
+        string Reply(long unix) => $$"""{"serverTime":"{{DateTimeOffset.FromUnixTimeSeconds(unix):yyyy-MM-ddTHH:mm:ssZ}}","hold":false,"commands":[]}""";
+        var next = Reply(local.ToUnixTimeSeconds() + 30);
+        var h = new FakeHandler((r, b) => Ok(next));
+        var client = new HomeClient(new HttpClient(h), new Uri("https://home.example/"), _dir, HomeKey.LoadOrCreate(_dir), () => local);
+        await client.HeartbeatAsync(HomeLinkService.BuildBody(), default);
+        Assert.Equal(0, client.ClockOffsetSeconds);
+        next = Reply(local.ToUnixTimeSeconds() - 7200);
+        await client.HeartbeatAsync(HomeLinkService.BuildBody(), default);
+        Assert.Equal(-7200, client.ClockOffsetSeconds);
+    }
+
     [Fact]
     public async Task NetworkFailure_DoesNotThrow()
     {

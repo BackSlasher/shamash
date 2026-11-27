@@ -25,17 +25,21 @@ def signed_message(timestamp: str, body: bytes) -> bytes:
     return f"{timestamp}\n{hashlib.sha256(body).hexdigest()}".encode()
 
 
-def verify(public_key_pem: str, timestamp: str, body: bytes, signature_b64: str, now: float | None = None) -> bool:
+def check(public_key_pem: str, timestamp: str, body: bytes, signature_b64: str, now: float | None = None) -> str:
+    """"ok", "stale" (signature valid but timestamp outside the window) or "bad signature".
+
+    The signature is verified first, so only a holder of the client's key can ever learn "stale"."""
     try:
         ts = int(timestamp)
-    except (TypeError, ValueError):
-        return False
-    if abs((time.time() if now is None else now) - ts) > MAX_SKEW_SECONDS:
-        return False
-    try:
         key = serialization.load_pem_public_key(public_key_pem.encode())
         key.verify(base64.b64decode(signature_b64, validate=True), signed_message(timestamp, body),
                    ec.ECDSA(hashes.SHA256()))
-        return True
     except (InvalidSignature, ValueError, TypeError):
-        return False
+        return "bad signature"
+    if abs((time.time() if now is None else now) - ts) > MAX_SKEW_SECONDS:
+        return "stale"
+    return "ok"
+
+
+def verify(public_key_pem: str, timestamp: str, body: bytes, signature_b64: str, now: float | None = None) -> bool:
+    return check(public_key_pem, timestamp, body, signature_b64, now) == "ok"
