@@ -158,6 +158,142 @@ Confirmation needed: before each move.
 Seed data for the VM: a salad folder with ~30 mixed files (some exact copies of files in other Desktop folders, a few older versions, .doc and .pdf files) plus 5-6 topic folders with a handful of documents each.
 Done when: files land in the right folders by voice, copies end up in כפולים, "תחזיר את זה" restores the last file and its copies, a restart resumes where it stopped.
 
+### Editing the open Word document (second priority)
+
+These tasks act on the document he is working in, at the place he put the cursor with the mouse. They come after the finding, sorting and mail tasks above. Every one of them works through the running Word (COM attach only, never start Word) and the `ActiveDocument`.
+
+### Describe the open document                          status: idea
+Ask (Hebrew, as he would say it): "מה פתוח עכשיו?"
+Also phrased as: "איפה אני במסמך?", "באיזה מסמך אני עובד?"
+What should happen: `describe_active_document` attaches to the running Word (never starts one) and reads `ActiveDocument`: name, full path, saved flag, track-changes state, revision count, paragraph count, the paragraph under the cursor (first ~15 words) and the selected text if any. This is the "here" every editing tool below relies on: the cursor he put with the mouse.
+Touches: the running Word, read only.
+Must never: change anything in the document or the Word session.
+Spoken result: "פתוח המסמך X, הסמן בפסקה 3 שמתחילה ב..., מעקב שינויים כבוי, יש שינויים שלא נשמרו".
+Confirmation needed: none.
+Seed data for the VM: a multi-paragraph .docx open in Word with the cursor placed by script, one variant with a selection and one with tracked changes.
+Done when: with a document open and the cursor in paragraph 3, the tool reports that paragraph's opening words.
+
+### Undo the last edit                                  status: idea
+Ask (Hebrew, as he would say it): "תבטל את מה שעשית", "תחזיר את זה כמו שהיה"
+Also phrased as: "בטל", "תחזיר את המסמך לפני השינויים"
+What should happen: `undo_last_edit` calls `ActiveDocument.Undo(n)` (default 1) and says what was undone. Before the FIRST edit of each document in a session, every editing tool takes a backup copy under `%LocalAppData%\Shamash\backups`; `restore_backup` writes `<name> (לפני שמש).docx` next to the original, never overwriting anything.
+Touches: the active document, the backups folder.
+Must never: overwrite the original or an existing file on restore; delete backups during the session.
+Spoken result: "ביטלתי". Every editing tool below must mention "אפשר לבטל" in its spoken result.
+Confirmation needed: none for undo; none for restore (it only adds a file).
+Seed data for the VM: a document edited by two tools in a row.
+Done when: undo reverts the last edit only, and restore creates the "(לפני שמש)" copy with the original content without touching the original.
+
+### Paragraph spacing                                   status: idea
+Ask (Hebrew, as he would say it): "תעשה רווח של שורה וחצי"
+Also phrased as: "רווח כפול בכל המסמך", "רווח אחרי פסקה", "תחזיר לרווח רגיל"
+What should happen: scope is the selection if any, else the paragraph under the cursor, else ask "בכל המסמך או רק בפסקה הזאת?". Set `Range.ParagraphFormat.LineSpacingRule` (wdLineSpaceSingle = 0, wdLineSpaceDouble = 2, wdLineSpace1pt5 = 4); "רווח אחרי פסקה" sets `SpaceAfter`. Read the value back after setting.
+Touches: the active document.
+Must never: change anything outside the scope he named; touch fonts or text.
+Spoken result: "הרווח בפסקה הוא שורה וחצי, אפשר לבטל".
+Confirmation needed: none for a paragraph or selection; before acting for the whole document.
+Seed data for the VM: a document with a mix of paragraph styles and a table.
+Done when: the rule reads back as set for exactly the scoped paragraphs.
+Owner inbox (2026-11-28): "Change paragraph spacing to 1.5 lines".
+
+### Track changes on/off                                status: idea
+Ask (Hebrew, as he would say it): "תדליק מעקב שינויים"
+Also phrased as: "תכבה", "מעקב שינויים דולק?"
+What should happen: `ActiveDocument.TrackRevisions` get and set; say the state before and after.
+Touches: the active document's setting.
+Must never: accept or reject existing revisions.
+Spoken result: "מעקב שינויים היה כבוי ועכשיו הוא דולק, אפשר לבטל".
+Confirmation needed: none.
+Seed data for the VM: a document with tracking off and one with it on.
+Done when: the property reads back as requested. Simplest of the set; first to build.
+Owner inbox (2026-11-28): "Turn track changes on/off".
+
+### Review the suggested changes                        status: idea
+Ask (Hebrew, as he would say it): "בוא נעבור על השינויים המוצעים"
+Also phrased as: "קבל", "דחה", "דלג", "קבל הכל מהמחבר הזה", "מספיק להיום"
+What should happen: like the sorting sitting. `ActiveDocument.Revisions` is enumerated one at a time: type (insert / delete / format), author, date, the changed text with ~10 words of context; the tool selects the revision's `Range` so it is highlighted on screen. He says "קבל" / "דחה" / "דלג" / "קבל הכל מהמחבר הזה" / "מספיק להיום"; `Revision.Accept()` / `Reject()`. Tools: `review_changes_start`, `review_changes_next`, `review_changes_accept`, `review_changes_reject`, `review_changes_skip`, `review_changes_status`; `accept_all_changes` and `reject_all_changes` only after explicit confirmation with the count.
+Touches: the active document.
+Must never: accept or reject anything without his word per item or an explicit "all".
+Spoken result: "הוספה של דני: '...', לקבל?" then "התקבל, נשארו 6".
+Confirmation needed: before each accept or reject (his word per item); with the count before any "all".
+Seed data for the VM: a docx with ~8 tracked revisions by two authors (add to `tools/seed-docs/gen.py`).
+Done when: a sitting accepts 2, rejects 1, skips 1, stops, and resumes later at the skipped one.
+Owner inbox (2026-11-28): "let's review all of the suggested changes". Most valuable of the set for an academic.
+
+### Add a footnote                                      status: idea
+Ask (Hebrew, as he would say it): "תוסיף הערת שוליים: ..."
+Also phrased as: "תוסיף הערת שוליים אחרי המילים X"
+What should happen: at the cursor, or after the words he names (Find within the paragraph under the cursor), `Footnotes.Add(Range, Text:=dictated)`. The dictated text is read back before inserting (STT errors in citations are likely); after inserting, the footnote number is spoken.
+Touches: the active document.
+Must never: insert before the read-back is confirmed; change other text.
+Spoken result: "הוספתי הערת שוליים 4, אפשר לבטל".
+Confirmation needed: before acting (the read-back).
+Seed data for the VM: a document with a few existing footnotes and a paragraph with a distinctive phrase.
+Done when: the footnote exists at the right place with the confirmed text and the right number; undo removes it.
+Owner inbox (2026-11-28): "Add a footnote".
+
+### Insert a picture                                    status: idea
+Ask (Hebrew, as he would say it): "תכניס כאן את התמונה של ..."
+Also phrased as: "שהטקסט יזרום מסביב", "מעל ומתחת", "יותר קטן"
+What should happen: `search_documents` needs image kinds (jpg/png/tif) and the Pictures folder as a root; then `InlineShapes.AddPicture(path)` at the cursor. "שהטקסט יזרום מסביב" converts it to a Shape with `WrapFormat.Type` = wdWrapSquare (0) or wdWrapTight (1); "מעל ומתחת" = wdWrapTopBottom (4); "יותר קטן" uses `ScaleWidth` / `ScaleHeight`.
+Touches: the Pictures folder (read), the active document.
+Must never: modify or move the picture file.
+Spoken result: which picture and where: "הכנסתי את התמונה X אחרי הפסקה שמתחילה ב..., אפשר לבטל".
+Confirmation needed: before acting when more than one picture matches.
+Seed data for the VM: a few images with Hebrew names in Pictures, one pair with similar names.
+Done when: the picture is at the cursor with the requested wrapping and size.
+Owner inbox (2026-11-28): "Insert picture so and so here (incl text flow)".
+
+### Insert a special character                          status: idea
+Ask (Hebrew, as he would say it): "תכניס סימן הפסקה"
+Also phrased as: "קו מפריד ארוך", "השם עם נקודה", describing the character in words
+What should happen: the model maps his description to a Unicode character; `insert_text_at_cursor` (`Selection.TypeText`) inserts it after a read-back of the character's name. For Hebrew niqqud, combining marks go AFTER the base letter, and some fonts lack them.
+Touches: the active document.
+Must never: insert before he confirmed the named character.
+Spoken result: "הכנסתי קו מפריד ארוך, אפשר לבטל".
+Confirmation needed: before acting (name the character).
+Seed data for the VM: a paragraph with the cursor placed; a Hebrew word for the niqqud case.
+Done when: the right code point is in the document at the cursor.
+Design note (2026-11-28): this is a model-knowledge task; the tool is trivial.
+Owner inbox (2026-11-28): "I want to add a special character (proceeds to describe it)".
+
+### Copy a paragraph from another document              status: idea
+Ask (Hebrew, as he would say it): "תעתיק לכאן את הפסקה על X מהמסמך Y"
+Also phrased as: "הפסקה השלישית ממסמך Y", "בלי עיצוב"
+What should happen: `search_documents` for Y; open Y read-only and hidden; locate the paragraph by number ("הפסקה השלישית") or by content (first words / topic: `read_document`, then choose); copy with `Range.FormattedText` into the cursor position of the active document (keeps formatting), or plain text when he says "בלי עיצוב". The first words of the chosen paragraph are read back before inserting.
+Touches: Y (read only), the active document.
+Must never: modify Y; leave Y open or visible afterwards.
+Spoken result: "הדבקתי את הפסקה שמתחילה ב... מתוך Y, אפשר לבטל".
+Confirmation needed: before acting.
+Seed data for the VM: two documents with distinct, numbered paragraphs, one with heavy formatting.
+Done when: the paragraph lands at the cursor with formatting (or plain) and Y is byte-identical.
+Owner inbox (2026-11-28): "Copy the paragraph so and so from document so and so here".
+
+Design note (2026-11-28, owner + Fable): all editing goes through predefined tools with fixed contracts, never free-form COM scripting by the model (blast radius on his real files and mail, testability, latency, untrusted document text). Every mutating tool acts only on the ActiveDocument identified by full path, takes a backup before the first edit, is undoable, and reads back dictated text before inserting. Regression protection before any of these ships: (1) a direct tool-invocation harness on the VM (run one tool with a JSON input, assert the exact result and the file/Office state, no model), (2) a scenario suite replaying the owner's phone session of 2026-11-28 as text turns asserting tool sequences and end state, not wording, (3) the model version pinned and bumped deliberately.
+
+### Phone feedback and test tooling
+
+### Phone: show what is happening                       status: idea
+Ask (Hebrew, as he would say it): none; this is app behaviour, not a request.
+What should happen: show the transcript and the reply text on screen when the PC sends them (the protocol already carries both), a microphone level meter while listening, and the hint "לחץ שוב כשסיימת" on the red screen. Partials stay off.
+Touches: the phone app UI, link protocol (read only).
+Must never: dim the screen; show partial words (the live model hallucinated Hebrew in the field test).
+Spoken result: unchanged.
+Confirmation needed: none.
+Seed data for the VM: none; test on the phone against the PC service.
+Done when: a link-mode turn shows his words and the reply on screen, the meter moves while he speaks, and the hint is visible on the red screen.
+Owner note (2026-11-28): link mode lost the live words of the phone-only POC and that confused him.
+
+### Regression harness for Office tools                 status: idea
+Ask (Hebrew, as he would say it): none; this is test tooling.
+What should happen: the three items of the editing design note: (1) a direct tool-invocation harness on the VM (one tool, one JSON input, assert the exact result and the file/Office state, no model); (2) a scenario suite replaying the owner's phone session of 2026-11-28 as text turns, asserting tool sequences and end state, not wording; (3) the model version pinned and bumped deliberately.
+Touches: the win11-office VM, `tools/winvm/`, the PC service.
+Must never: run against his real PC or real documents; depend on model wording.
+Spoken result: not applicable.
+Confirmation needed: none.
+Seed data for the VM: the seed documents from `tools/seed-docs/gen.py`, including the tracked-revisions docx.
+Done when: `tools/winvm/scenarios/run.sh` restores win11-office, installs the build, runs the scenarios and prints pass/fail; a COM-level script suite calls each Office tool directly.
+
 <!-- Add tasks below. Printing, calendar, reading a PDF aloud, summarising a long document, dictating a letter, renaming files, finding a photo... -->
 
 ### Warn when the phone stops charging                  status: idea
@@ -195,7 +331,13 @@ These are facts about the target environment; none of the files themselves are i
 6. Close a document: waits for the Office edition answer (Word automation).
 7. Sort the salad folders piecemeal (sort_folder_* tools): built, VM test pending.
 8. Email: last, after the mail client is known.
+9. Phone feedback (show transcript, level meter, hint).
+10. Regression harness for Office tools (before any editing tool).
+11. Describe the open document and Undo the last edit (foundation).
+12. Small edits: Track changes on/off, Paragraph spacing, Add a footnote, Insert a special character.
+13. Review the suggested changes (the most valuable for an academic, after the harness matured).
+14. Copy a paragraph from another document.
+15. Insert a picture.
 
 # Inbox
 <!-- drop raw ideas here; they get expanded into the Tasks section -->
-
