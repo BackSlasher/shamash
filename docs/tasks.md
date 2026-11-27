@@ -219,6 +219,7 @@ Confirmation needed: before each accept or reject (his word per item); with the 
 Seed data for the VM: a docx with ~8 tracked revisions by two authors (add to `tools/seed-docs/gen.py`).
 Done when: a sitting accepts 2, rejects 1, skips 1, stops, and resumes later at the skipped one.
 Owner inbox (2026-11-28): "let's review all of the suggested changes". Most valuable of the set for an academic.
+Design note (2026-11-28): easy on the Word side, hard on the sitting side. The tool owns the pointer (state file like sort-sessions.json); "קבל" always means the revision highlighted on screen, never one the model remembers. Per-item turns cost ~6 s each, so allow several answers in one turn ("קבל, דחה, קבל" for the next three, applied in order) and group answers ("כל השינויים של דני", "כל שינויי העיצוב") with a count confirmation. Stop and resume across days is expected, not an edge case.
 
 ### Add a footnote                                      status: idea
 Ask (Hebrew, as he would say it): "תוסיף הערת שוליים: ..."
