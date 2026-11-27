@@ -146,6 +146,15 @@ public static class PathGuard
     }
 
     /// <summary>The root that contains <paramref name="fullPath"/>, longest match, or null.</summary>
+    /// <summary>Display name of a root: its last path segment.</summary>
+    public static string RootName(string root)
+    {
+        var t = root.TrimEnd('\\', '/');
+        var i = t.LastIndexOfAny(['\\', '/']);
+        var n = i >= 0 ? t[(i + 1)..] : t;
+        return n.Length > 0 ? n : root;
+    }
+
     public static string? FindRoot(string fullPath, IEnumerable<string> roots)
     {
         var full = Norm(fullPath);
@@ -229,13 +238,26 @@ public sealed class ReadDocumentTool(IReadOnlyList<string> roots) : IAgentTool
     {
         if (Path.IsPathFullyQualified(path))
             return PathGuard.IsUnderRoots(path, roots) ? Path.GetFullPath(path) : null;
-        // relative form "folder/name": try under each root; the guard still applies after normalising "..".
-        foreach (var root in roots)
+        // relative form "folder/name": first "<rootname>/rest" under the root of that name, then the whole path under each root;
+        // the guard still applies after normalising "..".
+        var rel = path.Replace('\\', '/').TrimStart('/');
+        var slash = rel.IndexOf('/');
+        if (slash > 0)
         {
-            var candidate = Path.GetFullPath(Path.Combine(root, path.Replace('\\', Path.DirectorySeparatorChar).Replace('/', Path.DirectorySeparatorChar)));
-            if (PathGuard.IsUnderRoots(candidate, roots) && File.Exists(candidate)) return candidate;
+            var head = rel[..slash];
+            var rest = rel[(slash + 1)..];
+            foreach (var root in roots.Where(r => string.Equals(PathGuard.RootName(r), head, StringComparison.OrdinalIgnoreCase)))
+                if (TryUnder(root, rest, roots) is { } hit) return hit;
         }
+        foreach (var root in roots)
+            if (TryUnder(root, rel, roots) is { } hit) return hit;
         return null;
+    }
+
+    private static string? TryUnder(string root, string rel, IReadOnlyList<string> roots)
+    {
+        var candidate = Path.GetFullPath(Path.Combine(root, rel.Replace('/', Path.DirectorySeparatorChar)));
+        return PathGuard.IsUnderRoots(candidate, roots) && File.Exists(candidate) ? candidate : null;
     }
 }
 
@@ -317,7 +339,7 @@ public sealed class SearchDocumentsTool(IReadOnlyList<string> roots, IDocumentIn
         "Searches the user's document folders through the Windows Search index, by file name and by content. query is a few keywords (Hebrew or English), not a sentence. " +
         "Give Hebrew words without the prefix letters ה ו ב ל מ ש כ when possible (ירושלים, not בירושלים). " +
         "If a search returns nothing, retry once with a shorter or alternative form of the words before concluding the file does not exist. " +
-        "Returns numbered lines: name | folder | modified date | size KB, newest first. " +
+        "Returns numbered lines: name | folder | modified date | size KB, newest first. The folder column starts with the root folder name (Desktop or Documents), then the subfolders; pass it as folder/name to the other tools. " +
         "If it returns an error saying the search index is not available, tell the user so plainly and ask them to try again in a minute; do not guess file names.";
     public string InputSchema => """
         {"type":"object","properties":{"query":{"type":"string","description":"Keywords to look for in names and content"},"kind":{"type":"string","enum":["any","docx","pdf","xlsx","txt"],"description":"File type filter, default any"},"max":{"type":"integer","description":"Number of results, 1 to 20, default 10"}},"required":["query"]}
@@ -360,7 +382,13 @@ public sealed class SearchDocumentsTool(IReadOnlyList<string> roots, IDocumentIn
         {
             var root = PathGuard.FindRoot(h.FullPath, roots);
             var dir = Path.GetDirectoryName(h.FullPath) ?? "";
-            var folder = root is null ? Path.GetFileName(dir) : Path.GetRelativePath(root, dir);
+            string folder;
+            if (root is null) folder = Path.GetFileName(dir);
+            else
+            {
+                var rel = Path.GetRelativePath(root, dir).Replace(Path.DirectorySeparatorChar, '/');
+                folder = rel == "." ? PathGuard.RootName(root) : PathGuard.RootName(root) + "/" + rel;
+            }
             sb.Append(++n).Append(". ").Append(h.Name).Append(" | ").Append(folder).Append(" | ")
               .Append(h.Modified.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)).Append(" | ")
               .Append(((h.Size + 1023) / 1024).ToString(CultureInfo.InvariantCulture)).Append(" KB\n");

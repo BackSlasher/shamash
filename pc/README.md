@@ -77,7 +77,7 @@ With `llm=claude` the reply model runs a tool loop (`ToolLoop`, `ClaudeReplyMode
 
 | Tool | Input | Result |
 |---|---|---|
-| `search_documents` | `query` (keywords), optional `kind` (`any`, `docx`, `pdf`, `xlsx`, `txt`), optional `max` (1-20, default 10) | lines `n. name \| folder relative to the root \| yyyy-MM-dd \| size KB` (Windows Search index only; within 30 days .docx first, then other text formats, then .doc/.rtf/.pdf, newest first), `no documents found`, or `error: ...` when the index is unavailable |
+| `search_documents` | `query` (keywords), optional `kind` (`any`, `docx`, `pdf`, `xlsx`, `txt`), optional `max` (1-20, default 10) | lines `n. name \| folder \| yyyy-MM-dd \| size KB` (folder starts with the root's name, e.g. `Desktop/Desktop stuff`, `Documents/מאמרים`, or just `Desktop` for a file directly in the root; the other tools accept that form) (Windows Search index only; within 30 days .docx first, then other text formats, then .doc/.rtf/.pdf, newest first), `no documents found`, or `error: ...` when the index is unavailable |
 | `read_document` | `path` (full path, or `folder/name` as search showed it), optional `max_chars` (default 6000, cap 30000) | text of .docx (paragraphs and tables, cells tab-separated), .doc and .rtf (Word COM on Windows, else the managed extractor, see Office automation), .pdf (PdfPig), .xlsx (sheet name, first 200 rows, tabs), .txt/.md/.csv (UTF-8, BOM detected), cut with `[truncated, N chars total]` |
 | `show_in_explorer` | `path` | runs `explorer.exe /select,"<path>"`; returns the folder name |
 | `open_file` | `path` | if the document is already open (exact path in Word/Excel, else window title, as `is_document_open`) focuses it and says so; else `Process.Start` with `UseShellExecute` (default app); `opened <name> with the default app` or the error text |
@@ -294,8 +294,20 @@ Turn times with one tool call were 3-8 s; the translation turn 11 s.
 - "Reply to them: thanks, not interested, remove me from the list": `draft_reply` 1.1 s; the draft was read back and the model asked whether to send (it also suggested the unsubscribe link instead). "No, don't send, leave it in Drafts": no tool call; Drafts count rose, Outbox stayed at 0.
 - Not exercised: `send_draft` (no sending account on the VM) and the quoting of the original in the draft body (not inspected).
 
+## Verified: index-only search, exact document identity and dialog detection (2026-11-27 10:28-10:32, 0.1.13 on the win11-office VM, text turns)
+
+- 0.1.13 installed over the running 0.1.12 with Setup.exe --silent; service back in ~1 s, "No update available".
+- A real 7 s Hebrew audio recording (tools/fixtures/hebrew_v3.wav, asking to find the article about Ottoman Jerusalem and translate it) through the full chain: transcript correct, `search_documents` found two matches, the reply asked which one to translate (reply at 17.7 s from the start of the 7 s upload, 14.5 s of reply audio); the follow-up "the survey" ran `translate_document` and answered in 10 s. Only the phone's microphone and speaker remain unverified end to end.
+- With the Windows Search service stopped (`Stop-Service WSearch`): "find the letter to the municipality" -> `search_documents` returned the index error in 78 ms and the reply was "אינדקס החיפוש לא זמין כרגע, אז אני לא יכול לחפש את המכתב לעירייה. נסה לבקש ממני שוב בעוד דקה." No fallback search ran. Service started again; the first query after ~70 s worked.
+- "Where are files named Reading list": two copies (Desktop root and Desktop stuff). "Open the one in the main folder": `open_file` on the Desktop copy, Word opened it. "Is the Reading list in Desktop stuff open now?": `is_document_open` (273 ms) answered `not open; a different file with the same name is open: <Desktop path>`; the reply said so and corrected its own earlier wording. "Which Reading list is open?": exact match in 17 ms, `open in Word: <path>`.
+- Word's classic Open dialog raised with Ctrl+F12 in the interactive session; "Is Word showing something on screen? What does it say?" -> `describe_office_dialogs` (6 ms) read the dialog; the reply named the "Open" window, said the file-name field was empty and advised pressing Cancel. Screenshot confirmed the dialog.
+- Defect seen and fixed in this build: with two roots the folder column did not say which root a file was in (a Desktop file was reported as being in the main Documents folder). The column now starts with the root name and the path tools accept `<rootname>/relative/name`.
+
 ## Not verified
 
+- The dialog text of Office 2013+ `NUIDialog` alerts (DirectUI; only the title may be readable).
+- The effect of `AutomationSecurity`/`ConfirmConversions` on a real macro or conversion prompt.
+- Excel document identity (no Excel document was opened).
 - Which clause of the index query matched a given hit (name, CONTAINS or FREETEXT); the result text does not record it.
 - A spoken turn from the phone (someone talking into it) and the phone playing the reply audio through its speaker; only a silent turn ran from the phone.
 - Shortcuts, and SmartScreen on a browser-downloaded Setup.exe (the VM copy came over the shared folder).

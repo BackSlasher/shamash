@@ -262,7 +262,33 @@ public class DocumentToolTests
         MakeDocx(f, "a");
         var tool = new SearchDocumentsTool([d.Path], new FakeIndex([new DocumentHit("x.docx", f, new DateTime(2026, 11, 20), 2048)]));
         var r = await tool.RunAsync(J("""{"query":"x"}"""), default);
-        Assert.Equal("1. x.docx | sub | 2026-11-20 | 2 KB", r);
+        Assert.Equal($"1. x.docx | {PathGuard.RootName(d.Path)}/sub | 2026-11-20 | 2 KB", r);
+    }
+
+    [Fact]
+    public async Task Search_TwoRoots_LinesCarryRootName_AndResolve()
+    {
+        using var t = new TempDir();
+        var desk = Path.Combine(t.Path, "Desktop");
+        var docs = Path.Combine(t.Path, "Documents");
+        Directory.CreateDirectory(desk);
+        Directory.CreateDirectory(docs);
+        var a = Path.Combine(desk, "top.docx");
+        var b = Path.Combine(desk, "sub", "x.docx");
+        var c = Path.Combine(docs, "מאמרים", "y.docx");
+        foreach (var f in new[] { a, b, c }) { Directory.CreateDirectory(Path.GetDirectoryName(f)!); MakeDocx(f, "hello"); }
+        var m = new DateTime(2026, 11, 20);
+        var tool = new SearchDocumentsTool([desk, docs], new FakeIndex([new("top.docx", a, m, 1024), new("x.docx", b, m, 1024), new("y.docx", c, m, 1024)]));
+        var r = await tool.RunAsync(J("""{"query":"x"}"""), default);
+        Assert.Contains("top.docx | Desktop | 2026-11-20", r);
+        Assert.Contains("x.docx | Desktop/sub | 2026-11-20", r);
+        Assert.Contains("y.docx | Documents/מאמרים | 2026-11-20", r);
+
+        var read = new ReadDocumentTool([desk, docs]);
+        foreach (var p in new[] { "Desktop/sub/x.docx", "desktop/sub/x.docx", "sub/x.docx" })
+            Assert.Contains("hello", await read.RunAsync(J(JsonSerializer.Serialize(new { path = p })), default));
+        Assert.Contains("hello", await read.RunAsync(J(JsonSerializer.Serialize(new { path = "documents/מאמרים/y.docx" })), default));
+        Assert.StartsWith("error:", await read.RunAsync(J("""{"path":"Documents/sub/x.docx"}"""), default));
     }
 
     [Fact]

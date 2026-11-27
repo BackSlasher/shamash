@@ -388,15 +388,5 @@ public sealed class TranslateDocumentTool(IReadOnlyList<string> roots, ITranslat
     }
 
     /// <summary>Same rule as read_document: full path under a root, or folder/name under a root; guard applied after normalising "..".</summary>
-    private string? Resolve(string path)
-    {
-        if (Path.IsPathFullyQualified(path))
-            return PathGuard.IsUnderRoots(path, roots) ? Path.GetFullPath(path) : null;
-        foreach (var root in roots)
-        {
-            var candidate = Path.GetFullPath(Path.Combine(root, path.Replace('\\', Path.DirectorySeparatorChar).Replace('/', Path.DirectorySeparatorChar)));
-            if (PathGuard.IsUnderRoots(candidate, roots) && File.Exists(candidate)) return candidate;
-        }
-        return null;
-    }
+    private string? Resolve(string path) => ReadDocumentTool.Resolve(path, roots);
 }
