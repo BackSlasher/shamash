@@ -62,13 +62,33 @@ public interface IToolConversation
 
     /// <summary>Appends the assistant turn of <paramref name="step"/> and a user turn holding one result per tool call.</summary>
     void AddToolResults(ModelStep step, IReadOnlyList<(string Id, string Text)> results);
+
+    /// <summary>Appends a plain user turn (the nudge after an empty reply). Default: nothing, for conversations that need no history.</summary>
+    void AddUserText(string text) { }
 }
 
 public static class ToolLoop
 {
     public const int MaxRounds = 8;
 
+    /// <summary>Sent once when the model's final response has no text.</summary>
+    public const string EmptyReplyNudge = "ענה עכשיו במשפט אחד או שניים.";
+
     public static async Task<string> RunAsync(IToolConversation conversation, IReadOnlyList<IAgentTool> tools,
+        List<ToolCallRecord> calls, ILogger? log, CancellationToken ct)
+    {
+        var text = await LoopAsync(conversation, tools, calls, log, ct);
+        if (text.Trim().Length > 0) return text;
+        // The model sometimes answers with no text block at all. One retry, tools off so it must speak; not a loop round.
+        log?.LogWarning("turn: empty reply, retrying once");
+        ct.ThrowIfCancellationRequested();
+        conversation.AddUserText(EmptyReplyNudge);
+        var retry = await conversation.NextAsync(false, ct);
+        UsageScope.Record(retry.Usage);
+        return retry.Text;
+    }
+
+    private static async Task<string> LoopAsync(IToolConversation conversation, IReadOnlyList<IAgentTool> tools,
         List<ToolCallRecord> calls, ILogger? log, CancellationToken ct)
     {
         for (var round = 0; round < MaxRounds; round++)

@@ -116,7 +116,7 @@ public sealed class SortStore(string path, OrganizeStore organize, IReadOnlyList
                 """{"type":"object","properties":{"session_id":{"type":"string"},"folder":{"type":"string"}}}""",
                 store.Status),
             new SortTool("undo_last_move",
-                "Moves the most recent file move (from any tool) back to where it was; a sorting move and its duplicates are undone together. Never overwrites.",
+                "Puts back the single file last moved by sort_folder_move in a sorting sitting (with its duplicates). Not for deduplication plans: use undo_plan for those. Never overwrites.",
                 """{"type":"object","properties":{}}""",
                 store.UndoLast),
         ];
@@ -625,6 +625,9 @@ public sealed class SortStore(string path, OrganizeStore organize, IReadOnlyList
                 if (!l.Tag.Contains('#')) break;
             }
             if (live.Count == 0) return "error: nothing to undo";
+            if (!System.Text.RegularExpressions.Regex.IsMatch(live[0].Tag, @"^s\d+#\d+$"))
+                return "error: the last moves were made by a deduplication plan; use undo_plan";
+            if (Find(live[0].Tag[..live[0].Tag.IndexOf('#')]) is null) return "error: no sorting move to undo";
             foreach (var l in live)
             {
                 if (File.Exists(l.From) || Directory.Exists(l.From)) return $"error: cannot undo, the original place of {System.IO.Path.GetFileName(l.From)} is taken";

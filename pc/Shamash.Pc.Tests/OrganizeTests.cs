@@ -115,6 +115,25 @@ public class OrganizeTests
     }
 
     [Fact]
+    public void Undo_RestoresRest_WhenSomeAlreadyMovedBack()
+    {
+        using var e = new Env();
+        var t = new DateTime(2020, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+        e.Write("k.txt", "one two three four five six", t.AddDays(1));
+        var d1 = e.Write("d1.txt", "one two three four five six", t);
+        var d2 = e.Write("d2.txt", "one two three four five six", t);
+        var id = e.FindIn(e.Root.Path).Split('\n')[0].Split(' ')[1];
+        Env.Call(e.Apply, $$"""{"plan_id":"{{id}}"}""");
+        var moved = File.ReadAllLines(e.Journal).Select(l => l.Split('\t')).First(p => p[2] == d1);
+        File.Move(moved[3], d1);
+        var u = Env.Call(e.Undo, $$"""{"plan_id":"{{id}}"}""");
+        Assert.Contains("restored: 1", u);
+        Assert.Contains("already in place: 1", u);
+        Assert.DoesNotContain("error", u);
+        Assert.True(File.Exists(d1) && File.Exists(d2));
+    }
+
+    [Fact]
     public void Undo_SkipsWhenOriginalPlaceTaken()
     {
         using var e = new Env();

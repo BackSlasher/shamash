@@ -408,6 +408,75 @@ public class ConversationTests
             ToolLoop.RunAsync(new UsageConversation(), [new UsageTool()], toolCalls, null, ct);
     }
 
+    private sealed class ScriptConversation(params ModelStep[] steps) : IToolConversation
+    {
+        public int Calls;
+        public List<bool> WithTools = [];
+        public List<string> Nudges = [];
+        public Task<ModelStep> NextAsync(bool withTools, CancellationToken ct) { WithTools.Add(withTools); return Task.FromResult(steps[Calls++]); }
+        public void AddToolResults(ModelStep step, IReadOnlyList<(string Id, string Text)> results) { }
+        public void AddUserText(string text) => Nudges.Add(text);
+    }
+
+    private sealed class ScriptLlm(ScriptConversation c) : IToolReplyModel
+    {
+        public Task<string> ReplyAsync(IReadOnlyList<ChatTurn> history, string userText, CancellationToken ct) => ReplyAsync(history, userText, [], ct);
+        public Task<string> ReplyAsync(IReadOnlyList<ChatTurn> history, string userText, List<ToolCallRecord> toolCalls, CancellationToken ct) =>
+            ToolLoop.RunAsync(c, [new UsageTool()], toolCalls, null, ct);
+    }
+
+    private static ModelStep ToolStep(LlmUsage u) =>
+        new("", [new ToolUseRequest("a", "t", JsonDocument.Parse("{}").RootElement.Clone())], null, u);
+
+    [Fact]
+    public async Task EmptyFinalReply_RetriesOnceWithoutTools_AndSumsUsage()
+    {
+        var c = new ScriptConversation(ToolStep(new LlmUsage(1, 10, 0, 0, 20)),
+            new ModelStep("  ", [], null, new LlmUsage(1, 3, 0, 0, 1)),
+            new ModelStep("יש חלון", [], null, new LlmUsage(1, 4, 0, 0, 5)));
+        var p = Pipeline(Stt("x"), new ScriptLlm(c), new FakeTts(_ => Chunks(10)));
+        var r = await p.RunAsync(OneSecond, 16000, new RecordingSender(), CancellationToken.None);
+        Assert.Equal("יש חלון", r.Reply);
+        Assert.Equal(3, c.Calls);
+        Assert.Equal([true, true, false], c.WithTools);
+        Assert.Equal([ToolLoop.EmptyReplyNudge], c.Nudges);
+        // UsageTool records 1 call (5 in, 7 out) as well.
+        Assert.Equal(new LlmUsage(4, 22, 0, 0, 33), r.Usage);
+    }
+
+    [Fact]
+    public async Task EmptyFirstReply_RetriesOnce()
+    {
+        var c = new ScriptConversation(new ModelStep("", [], null, new LlmUsage(1, 1, 0, 0, 0)),
+            new ModelStep("שלום", [], null, new LlmUsage(1, 2, 0, 0, 3)));
+        var p = Pipeline(Stt("x"), new ScriptLlm(c), new FakeTts(_ => Chunks(10)));
+        var r = await p.RunAsync(OneSecond, 16000, new RecordingSender(), CancellationToken.None);
+        Assert.Equal("שלום", r.Reply);
+        Assert.Equal(2, c.Calls);
+    }
+
+    [Fact]
+    public async Task EmptyTwice_FailsWithEmptyReply()
+    {
+        var c = new ScriptConversation(ToolStep(new LlmUsage(1, 1, 0, 0, 1)),
+            new ModelStep("", [], null), new ModelStep(" ", [], null));
+        var p = Pipeline(Stt("x"), new ScriptLlm(c), new FakeTts(_ => Chunks(10)));
+        var r = await p.RunAsync(OneSecond, 16000, new RecordingSender(), CancellationToken.None);
+        Assert.Equal(3, c.Calls);
+        Assert.Equal("llm", r.ErrorStage);
+        Assert.Equal("empty reply", r.ErrorMessage);
+    }
+
+    [Fact]
+    public async Task NonEmptyReply_NeverRetries()
+    {
+        var c = new ScriptConversation(new ModelStep("hi", [], null));
+        var p = Pipeline(Stt("x"), new ScriptLlm(c), new FakeTts(_ => Chunks(10)));
+        await p.RunAsync(OneSecond, 16000, new RecordingSender(), CancellationToken.None);
+        Assert.Equal(1, c.Calls);
+        Assert.Empty(c.Nudges);
+    }
+
     [Fact]
     public async Task Turn_SumsUsageOverModelCalls_AndWritesItToJson()
     {

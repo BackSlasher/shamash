@@ -200,7 +200,7 @@ public class SortTests
     }
 
     [Fact]
-    public void UndoLastMove_WorksOnApplyPlanJournal_LastLineOnly()
+    public void UndoLastMove_RefusesPlanJournal_AndNoSession()
     {
         using var e = new Env();
         var x = Path.Combine(e.Salad, "x.txt"); File.WriteAllText(x, "1");
@@ -208,9 +208,13 @@ public class SortTests
         var moved = Path.Combine(e.Desktop, "moved.txt");
         File.Move(y, moved);
         File.WriteAllText(e.Journal, $"2026-11-27 10:00:00\tp1\t{y}\t{moved}\n");
-        var r = e.Store().UndoLast(J("{}"));
-        Assert.Contains("restored: 1", r);
-        Assert.True(File.Exists(y));
+        var st = e.Store();
+        Assert.Equal("error: the last moves were made by a deduplication plan; use undo_plan", st.UndoLast(J("{}")));
+        Assert.True(File.Exists(moved) && !File.Exists(y));
+        // a sorting-form tag with no such session
+        File.AppendAllText(e.Journal, $"2026-11-27 10:01:00\ts7#1\t{y}\t{moved}\n");
+        Assert.Equal("error: no sorting move to undo", st.UndoLast(J("{}")));
+        Assert.True(File.Exists(moved) && !File.Exists(y));
     }
 
     [Fact]

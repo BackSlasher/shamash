@@ -331,7 +331,7 @@ public sealed class ApplyPlanTool(OrganizeStore store) : IAgentTool
 public sealed class UndoPlanTool(OrganizeStore store) : IAgentTool
 {
     public string Name => "undo_plan";
-    public string Description => "Moves the files of an applied plan back to where they were, using the move journal. Never overwrites.";
+    public string Description => "Reverts a whole deduplication plan applied with apply_plan (all its moves at once). Use this when the user wants the folder back as it was after organising. Not for sorting sittings. Moves the files back using the move journal; never overwrites.";
     public string InputSchema => """{"type":"object","properties":{"plan_id":{"type":"string"}},"required":["plan_id"]}""";
 
     public Task<string> RunAsync(JsonElement input, CancellationToken ct) => Task.Run(() => Run(input, ct), ct);
@@ -354,12 +354,14 @@ public sealed class UndoPlanTool(OrganizeStore store) : IAgentTool
         }
         var restored = 0;
         var problems = new List<string>();
+        var alreadyBack = 0;
         try
         {
             for (var i = entries.Count - 1; i >= 0; i--)
             {
                 ct.ThrowIfCancellationRequested();
                 var (from, to) = entries[i];
+                if (File.Exists(from) && !File.Exists(to)) { alreadyBack++; continue; }
                 if (File.Exists(from)) { problems.Add($"{Path.GetFileName(from)}: original place is taken"); continue; }
                 if (!File.Exists(to)) { problems.Add($"{Path.GetFileName(to)}: not found in {OrganizeStore.DuplicatesFolder}"); continue; }
                 Directory.CreateDirectory(Path.GetDirectoryName(from)!);
@@ -374,6 +376,7 @@ public sealed class UndoPlanTool(OrganizeStore store) : IAgentTool
         plan.Undone = true;
         var sb = new StringBuilder();
         sb.Append(CultureInfo.InvariantCulture, $"restored: {restored} files\nnot restored: {problems.Count}\n");
+        if (alreadyBack > 0) sb.Append(CultureInfo.InvariantCulture, $"already in place: {alreadyBack} files\n");
         foreach (var p in problems.Take(5)) sb.Append(p).Append('\n');
         return sb.ToString().TrimEnd();
     }
