@@ -19,6 +19,10 @@ with open(os.path.join(repo, ".env"), encoding="utf-8") as f:
         k, v = line.split("=", 1)
         env[k.strip()] = v.strip().strip('"').strip("'")
 
+if len(sys.argv) < 2 or sys.argv[1].startswith("-"):
+    # Never treat a flag (or a typo) as the output path: that would write the secrets into a file of that name.
+    print(__doc__.strip(), file=sys.stderr)
+    sys.exit(2)
 out = sys.argv[1]
 llm = "claude"
 if "--llm" in sys.argv:
