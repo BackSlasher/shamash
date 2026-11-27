@@ -47,7 +47,9 @@ object KioskPolicy {
         // The manifest's lockTaskMode="if_whitelisted" locks the task automatically whenever the
         // package is allowlisted, so with lockTask=false the allowlist must be empty.
         step("lock task packages") { dpm.setLockTaskPackages(admin, if (lockTask) arrayOf(pkg) else emptyArray()) }
-        step("lock task features") { dpm.setLockTaskFeatures(admin, DevicePolicyManager.LOCK_TASK_FEATURE_NONE) }
+        // Only the power menu (long-press power: Power off / Restart) stays reachable while locked;
+        // no home, overview, notifications, system info or keyguard.
+        step("lock task features") { dpm.setLockTaskFeatures(admin, DevicePolicyManager.LOCK_TASK_FEATURE_GLOBAL_ACTIONS) }
         step("persistent home") {
             val filter = IntentFilter(Intent.ACTION_MAIN).apply {
                 addCategory(Intent.CATEGORY_HOME)
