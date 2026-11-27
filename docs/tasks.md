@@ -260,14 +260,14 @@ Owner inbox (2026-11-28): "I want to add a special character (proceeds to descri
 ### Copy a paragraph from another document              status: idea
 Ask (Hebrew, as he would say it): "תעתיק לכאן את הפסקה על X מהמסמך Y"
 Also phrased as: "הפסקה השלישית ממסמך Y", "בלי עיצוב"
-What should happen: `search_documents` for Y; open Y read-only and hidden; locate the paragraph by number ("הפסקה השלישית") or by content (first words / topic: `read_document`, then choose); copy with `Range.FormattedText` into the cursor position of the active document (keeps formatting), or plain text when he says "בלי עיצוב". The first words of the chosen paragraph are read back before inserting.
-Touches: Y (read only), the active document.
-Must never: modify Y; leave Y open or visible afterwards.
-Spoken result: "הדבקתי את הפסקה שמתחילה ב... מתוך Y, אפשר לבטל".
-Confirmation needed: before acting.
-Seed data for the VM: two documents with distinct, numbered paragraphs, one with heavy formatting.
-Done when: the paragraph lands at the cursor with formatting (or plain) and Y is byte-identical.
-Owner inbox (2026-11-28): "Copy the paragraph so and so from document so and so here".
+What should happen: spot the paragraph together, on screen. `search_documents` for Y; open Y read-only but VISIBLE in Word and bring it to the front; locate the candidate paragraph by number ("הפסקה השלישית") or by content (first words / topic); select it so it is highlighted (`Range.Select()`), and ask "זאת?". On "לא" move the highlight to the next candidate (or take his hint: "יותר למטה", "הפסקה עם ..."); on "כן" copy with `Range.FormattedText` into the remembered cursor position of the target document (keeps formatting), or plain text when he says "בלי עיצוב", then bring the target document back to the front. The read-back is the highlight itself, not spoken text.
+Touches: Y (read only, visible), the active document.
+Must never: modify Y; type into Y; lose the target cursor position while Y is in front.
+Spoken result: "זאת?" per candidate; then "הדבקתי את הפסקה מתוך Y במקום שהסמן היה, אפשר לבטל".
+Confirmation needed: before acting, by "כן" on the highlighted paragraph.
+Seed data for the VM: two documents with distinct, numbered paragraphs, one with heavy formatting; a case where two paragraphs match the words he gives.
+Done when: the wrong candidate is rejected and the next one highlighted; the chosen paragraph lands at the original cursor with formatting (or plain); Y is byte-identical; the target is in front again.
+Owner inbox (2026-11-28): "Copy the paragraph so and so from document so and so here". Owner note (2026-11-28): the model can push back with "let's spot the paragraph together": switch to that document, mark the paragraph, ask "is that it".
 
 Design note (2026-11-28, owner + Fable): all editing goes through predefined tools with fixed contracts, never free-form COM scripting by the model (blast radius on his real files and mail, testability, latency, untrusted document text). Every mutating tool acts only on the ActiveDocument identified by full path, takes a backup before the first edit, is undoable, and reads back dictated text before inserting. Regression protection before any of these ships: (1) a direct tool-invocation harness on the VM (run one tool with a JSON input, assert the exact result and the file/Office state, no model), (2) a scenario suite replaying the owner's phone session of 2026-11-28 as text turns asserting tool sequences and end state, not wording, (3) the model version pinned and bumped deliberately.
 
