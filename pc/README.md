@@ -284,6 +284,15 @@ Turn times with one tool call were 3-8 s; the translation turn 11 s.
 - "Close the document Reading list": `close_document` reported no unsaved changes and closed it (114 ms).
 - "Translate the letter to the municipality to English" then "open the translation": `translate_document` 2.6 s, the new file opened in Word with the title, three headings and body text preserved in English; defect seen: trailing periods rendered at the line start because run-level w:rtl was kept (fixed in the next build, see TranslateTools).
 
+## Verified: Outlook mail tools on the win11-office VM (2026-11-27 01:50-02:05, 0.1.12, his real PST)
+
+- Outlook 2016 profile "Shamash" holding only his PST copy (2,263 inbox items, 1,045 unread), created as described in `tools/winvm/README.md` (PRF import plus registry path, wizard clicked through once in the interactive session). The service starts Outlook itself through COM when needed.
+- First attempt: `list_recent_mail` hit the 25 s timeout and the reply told the user an Outlook window was waiting on screen. It was the object-model guard ("A program is trying to access e-mail address information"), raised because Defender's signatures were a day old. After `Update-MpSignature` (signature age 0) the same call answered in 271 ms with no prompt. The policy fallback (`HKCU\Software\Policies\Microsoft\Office\16.0\Outlook\Security` ObjectModelGuard=2, AdminSecurityMode=3) was not needed and was not applied.
+- "Do I have new mail? Tell me about the last three": three real unread messages summarised in Hebrew; two were flagged as likely phishing.
+- "Read me the second one": `read_mail` 45 ms, 5.4 K chars; a faithful summary of an airline promotion.
+- "Reply to them: thanks, not interested, remove me from the list": `draft_reply` 1.1 s; the draft was read back and the model asked whether to send (it also suggested the unsubscribe link instead). "No, don't send, leave it in Drafts": no tool call; Drafts count rose, Outbox stayed at 0.
+- Not exercised: `send_draft` (no sending account on the VM) and the quoting of the original in the draft body (not inspected).
+
 ## Not verified
 
 - Which path answered that search (index name match or the docx content walk); the result text is not recorded. The FREETEXT clause and the PersistentHandler read ran without error on the VM but were not inspected separately.

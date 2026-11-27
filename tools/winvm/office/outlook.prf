@@ -1,0 +1,25 @@
+; Outlook 2016 profile "Shamash": one Unicode PST, no mail account.
+; Import: outlook.exe /importprf C:\outlook.prf
+[General]
+Custom=1
+ProfileName=Shamash
+DefaultProfile=Yes
+OverwriteProfile=Yes
+ModifyDefaultProfileIfPresent=TRUE
+
+[Service List]
+Service1=Unicode Personal Folders
+
+[Service1]
+UniqueService=No
+Name=Personal Folders
+PathToPersonalFolders=C:\Users\shamash\Documents\Outlook Files\<account>.pst
+EncryptionType=0x80000000
+
+[Unicode Personal Folders]
+ServiceName=MSUPST MS
+Name=PT_UNICODE,3001
+PathToPersonalFolders=PT_STRING8,6700
+RememberPassword=PT_BOOLEAN,6701
+EncryptionType=PT_LONG,6702
+Password=PT_STRING8,6703

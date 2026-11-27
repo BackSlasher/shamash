@@ -1,0 +1,18 @@
+<Configuration Product="ProPlus">
+  <!-- Unattended Office 2016 Pro Plus (volume media) for the test VM. No key: runs in the activation
+       grace period. Only Word, Excel and Outlook are installed. -->
+  <Display Level="none" CompletionNotice="no" SuppressModal="yes" AcceptEula="yes" />
+  <Setting Id="SETUP_REBOOT" Value="Never" />
+  <Setting Id="AUTO_ACTIVATE" Value="0" />
+  <OptionState Id="ACCESSFiles" State="absent" Children="force" />
+  <OptionState Id="PPTFiles" State="absent" Children="force" />
+  <OptionState Id="PubPrimary" State="absent" Children="force" />
+  <OptionState Id="OneNoteFiles" State="absent" Children="force" />
+  <OptionState Id="GrooveFiles2" State="absent" Children="force" />
+  <OptionState Id="LyncCoreFiles" State="absent" Children="force" />
+  <OptionState Id="SHAREDFiles" State="local" Children="force" />
+  <OptionState Id="TOOLSFiles" State="local" Children="force" />
+  <OptionState Id="WORDFiles" State="local" Children="force" />
+  <OptionState Id="EXCELFiles" State="local" Children="force" />
+  <OptionState Id="OUTLOOKFiles" State="local" Children="force" />
+</Configuration>

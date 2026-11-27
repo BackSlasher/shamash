@@ -20,7 +20,7 @@ Status values: `idea`, `specified` (enough detail to build), `tooling` (PC-side 
 | Languages in his documents | Hebrew and English mixed in the same documents and file names (15% of names contain Hebrew); English summaries exist in the inventory |
 | Printer / scanner | ? |
 | Browser and default apps | ? |
-| Other apps he relies on | ABBYY FineReader, AnyDesk, HP printing/fax, classic Outlook (PSTs, 013.net account) |
+| Other apps he relies on | ABBYY FineReader, AnyDesk, HP printing/fax, classic Outlook (PSTs, an ISP account) |
 | Who else uses the PC | ? |
 
 ## Task template
@@ -76,7 +76,7 @@ Done when: no file lost (count before = count after), duplicates grouped.
 Owner notes (2026-11-27): describing a rearrangement by voice is not realistic. Design: he triggers, the agent proposes a plan (spoken 3-sentence summary + plain list on the PC screen), he approves, moves only, never deletes, with a move journal for undo. First slice: deduplication alone.
 Owner notes (2026-11-27, later): the interesting files are .docx; the numerous .doc/.rtf/.pdf are cold storage. The saba consolidation plan is good, but he gave up on presenting it in full for approval, so the end result is Shamash consolidating the "salad" folders (סלט למיון וסידור / לסידור piles) piecemeal, a few files per sitting, with the grandfather saying yes or no by voice (see "Sort a messy folder piecemeal"). He may find an Office ISO for the VM. Guards: `find_duplicates` and the sorting tools refuse a folder with more than 3000 files (`maxOrganizeFiles`); `~$` lock files and `.lnk` shortcuts are skipped everywhere; default document roots stay Desktop and Documents, D: must be added explicitly.
 
-### Help with email                                     status: tooling
+### Help with email                                     status: tested-vm
 Ask: "יש לי מייל חדש?", "תקרא לי את המייל מדני", "תענה לו שאני מסכים"
 What should happen: read recent mail aloud (sender, subject, gist), draft replies, send only after he confirms.
 Touches: his email client / account (see environment).

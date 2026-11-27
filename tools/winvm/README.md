@@ -93,3 +93,47 @@ grace period, so an unlicensed install is of little use for automation tests; th
 trials need a Microsoft account and most need a card. Decision pending: the owner is checking which
 Office edition the actual user has; the test VM should get the same edition (a Microsoft 365
 subscription can be signed in on up to five PCs, which could include this VM).
+
+## Office 2016 on the VM
+
+Files in `tools/winvm/office/`: `config.xml`, `install-office.ps1`, `outlook.prf`, `outlook-wizard-driver.ps1`.
+
+- Source: the owner's Office 2016 Professional Plus 64-bit volume media (`SW_DVD5_Office_Professional_Plus_2016_64Bit_English_MLF_X20-42432.ISO`)
+  on his Google Drive, pulled with `rclone copy saba-d:OFFICE2016/<name> ~/vm/shamash-win11/shared/office/`.
+- Install: put the ISO, `config.xml` and `install-office.ps1` in `shared/office/`, then `tools/winvm/ssh.sh '\\host.lan\Data\office\install-office.ps1'`
+  (copies and mounts the ISO, runs `setup.exe /config C:\office-config.xml`, Word + Excel + Outlook only, no restart).
+  Office is at `C:\Program Files\Microsoft Office\Office16`.
+- No product key, by owner decision: it runs unactivated in the grace period. `cscript ospp.vbs` cannot run over SSH
+  (WSH memory error), so the activation state cannot be queried that way.
+- Right after setup PowerShell failed to start ("Starting the CLR failed with HRESULT 80004005"), which killed every SSH
+  session until `podman restart shamash-win11`. The same SSH wedge (banner timeout, then connection reset) happened again
+  at the end of the Outlook work, right after `Stop-Process -Name WINWORD -Force` followed by Word COM calls; treat Office
+  COM plus forced kills as a trigger and expect a container restart.
+- First-run registry keys (HKCU): `Software\Microsoft\Office\16.0\Common\General\ShownFirstRunOptin=1`,
+  `Software\Microsoft\Office\16.0\Registration\AcceptAllEulas=1` (set during the install work), and for Outlook
+  `Software\Microsoft\Office\16.0\Outlook\Setup\First-Run=1` and `FirstRun=1`.
+- Outlook profile `Shamash`, one PST and no mail account, PST at
+  `C:\Users\shamash\Documents\Outlook Files\<account>.pst` (copy of the live file, 937 MB; it opened without repair).
+  What it took (the PRF alone was not enough):
+  1. `outlook.exe /importprf C:\outlook.prf` (file in `office/outlook.prf`, CRLF line endings; copy it from
+     `\\host.lan\Data\outlook.prf`). This creates the profile and an empty "Outlook data file" service but did NOT apply
+     `PathToPersonalFolders` or `Name`, even with Section-6 style mappings (`PathToPersonalFolders=PT_STRING8,6700`); cause not found.
+  2. Write the path into the service key (the one with `001f3d09=MSUPST MS` and `001f300a=mspst.dll`) under
+     `HKCU:\Software\Microsoft\Office\16.0\Outlook\Profiles\Shamash\<guid>` as binary UTF-16 value `001f6700`
+     (plus `001f3001`=display name), and set `HKCU:\Software\Microsoft\Office\16.0\Outlook` `DefaultProfile`=`Shamash`.
+  3. Outlook still shows the "Welcome to Microsoft Outlook 2016" wizard because the profile has no account, and it blocks COM.
+     Start Outlook in the interactive session (scheduled task, principal `shamash`, `LogonType Interactive`; an Outlook
+     started from SSH runs in session 0 with invisible dialogs) and click through: Next, No, Next, "Use Outlook without an
+     email account", Next, Finish. `office/outlook-wizard-driver.ps1` does this by sending messages to the dialog controls
+     (names listed in `C:\click.txt`, one per line). The wizard does not come back afterwards.
+  4. A force-killed Outlook makes the next start ask "start in safe mode?" (hidden in session 0 and hangs COM): delete
+     `HKCU:\Software\Microsoft\Office\16.0\Outlook\Resiliency` before launching.
+  There is no `Windows Messaging Subsystem\Profiles` key for Outlook 2016; the profile lives under `Office\16.0\Outlook\Profiles`.
+- COM check over SSH works once the profile is right: `(New-Object -ComObject Outlook.Application).GetNamespace("MAPI")`
+  gives 1 store (`<account>`), Inbox 2263 items, 1045 unread via `Items.Restrict("[UnRead] = true")`, newest received
+  2026-11-12. `CurrentProfileName` read back empty from SSH, but the store is there. A second `New-Object` while the first
+  COM-started Outlook is still alive fails with 0x80080005; kill Outlook between runs (and clear `Resiliency`).
+- `Get-ChildItem -Filter *.doc` also returns `.docx` (8.3 matching); filter on `.Extension`.
+- Snapshot `win11-office` (saved 2026-11-27 02:51): seeded corpus + real Desktop sample from the saba mirror + the PST +
+  Office 2016 Word/Excel/Outlook; no Shamash, no secrets, no Outlook profile. It predates the profile above, so after a
+  restore the profile steps (PRF import, registry path, wizard click-through) must be redone, or take a new snapshot once done.
