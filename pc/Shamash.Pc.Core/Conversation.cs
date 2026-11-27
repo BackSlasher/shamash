@@ -102,8 +102,11 @@ public sealed class TurnResult
 }
 
 /// <summary>Runs one conversation turn: STT, LLM, TTS, against an abstract sender. Holds the running history.</summary>
-public sealed class TurnPipeline(ISpeechToText stt, IReplyModel llm, ITextToSpeech tts, ILogger log, bool allowTextTurns = false)
+public sealed class TurnPipeline(ISpeechToText stt, IReplyModel llm, ITextToSpeech tts, ILogger log, bool allowTextTurns = false, IReadOnlyList<IAgentTool>? tools = null)
 {
+    /// <summary>The tools the conversation uses; the link's direct `tool` message (test aid) looks them up here.</summary>
+    public IReadOnlyList<IAgentTool> Tools { get; } = tools ?? [];
+
     /// <summary>Test aid: a hello may carry the transcript as text and skip STT (settings allowTextTurns).</summary>
     public bool AllowTextTurns => allowTextTurns;
 
@@ -130,14 +133,15 @@ public sealed class TurnPipeline(ISpeechToText stt, IReplyModel llm, ITextToSpee
     public static TurnPipeline Create(ShamashSettings settings, HttpClient http, ILoggerFactory lf)
     {
         var log = lf.CreateLogger<TurnPipeline>();
+        var tools = BuildTools(settings);
         IReplyModel llm = settings.UseEchoLlm
             ? new EchoReplyModel()
-            : new ClaudeReplyModel(settings.AnthropicApiKey, settings.ClaudeModel, BuildTools(settings), log);
+            : new ClaudeReplyModel(settings.AnthropicApiKey, settings.ClaudeModel, tools, log);
         return new TurnPipeline(
             new ElevenLabsSpeechToText(http, settings.ElevenLabsKey),
             llm,
             new ElevenLabsTextToSpeech(http, settings.ElevenLabsKey, settings.TtsVoiceId),
-            log, settings.AllowTextTurns);
+            log, settings.AllowTextTurns, tools);
     }
 
     /// <summary>The tools Claude may call, built from settings.</summary>

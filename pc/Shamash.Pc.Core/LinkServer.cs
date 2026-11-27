@@ -120,6 +120,11 @@ public sealed class LinkServer(ILoggerFactory loggerFactory, string url, string 
                             if (conversation && !wasConversation) ServiceStatus.Instance.TurnStarted();
                             _log.LogInformation("link: hello from {Peer}: {Hello}", peer, Encoding.UTF8.GetString(msg.GetBuffer(), 0, (int)msg.Length));
                         }
+                        else if (type == "tool")
+                        {
+                            await HandleToolAsync(ws, root!.RootElement, peer, ct);
+                            return;
+                        }
                         else if (type == "cancel" && conversation)
                         {
                             turnCts.Cancel();
@@ -222,6 +227,51 @@ public sealed class LinkServer(ILoggerFactory loggerFactory, string url, string 
         _log.LogInformation("link: peer={Peer} frames={Frames} bytes={Bytes} audio={Audio}s wall={Wall}s gaps={Gaps} interarrival_ms(min/med/max)={Jit}",
             peer, stats.Frames, stats.Bytes, secs.ToString("F2", CultureInfo.InvariantCulture),
             sw.Elapsed.TotalSeconds.ToString("F2", CultureInfo.InvariantCulture), stats.Gaps, jit);
+    }
+
+    public static readonly TimeSpan ToolTimeout = TimeSpan.FromSeconds(25);
+
+    /// <summary>Test aid: run one named tool directly (no model, STT or TTS), reply tool_result, close. Needs allowTextTurns.</summary>
+    private async Task HandleToolAsync(WebSocket ws, JsonElement msg, string peer, CancellationToken ct)
+    {
+        var name = msg.TryGetProperty("name", out var n) && n.ValueKind == JsonValueKind.String ? n.GetString() ?? "" : "";
+        string reply;
+        var sw = Stopwatch.StartNew();
+        var outcome = "ok";
+        var pipe = _pipeline.Value;
+        if (!pipe.AllowTextTurns)
+        {
+            outcome = "refused";
+            reply = JsonSerializer.Serialize(new { type = "tool_result", name, error = "direct tool calls are disabled (allowTextTurns is off)" });
+        }
+        else if (pipe.Tools.FirstOrDefault(t => t.Name == name) is not { } tool)
+        {
+            outcome = "unknown";
+            reply = JsonSerializer.Serialize(new { type = "tool_result", error = $"unknown tool {name}" });
+        }
+        else
+        {
+            try
+            {
+                var input = msg.TryGetProperty("input", out var i) ? i.Clone() : JsonDocument.Parse("{}").RootElement.Clone();
+                using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                cts.CancelAfter(ToolTimeout);
+                var result = await tool.RunAsync(input, cts.Token);
+                reply = JsonSerializer.Serialize(new { type = "tool_result", name, ms = sw.ElapsedMilliseconds, result });
+            }
+            catch (Exception e)
+            {
+                outcome = "error";
+                reply = JsonSerializer.Serialize(new { type = "tool_result", name, ms = sw.ElapsedMilliseconds, error = e.Message });
+            }
+        }
+        _log.LogInformation("link: tool {Name} from {Peer}: {Outcome} in {Ms} ms", name, peer, outcome, sw.ElapsedMilliseconds);
+        try
+        {
+            await ws.SendAsync(Encoding.UTF8.GetBytes(reply), WebSocketMessageType.Text, true, CancellationToken.None);
+            await ws.CloseAsync(WebSocketCloseStatus.NormalClosure, null, CancellationToken.None);
+        }
+        catch (Exception e) when (e is WebSocketException or OperationCanceledException or IOException) { }
     }
 
     private async Task<TurnResult> RunTurnAsync(byte[] pcm, int rate, ITurnSender sender, CancellationToken ct, WebSocket ws, CancellationTokenSource loopCts, string? text = null)

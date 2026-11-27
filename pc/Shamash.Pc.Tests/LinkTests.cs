@@ -154,4 +154,78 @@ public class LinkTests
         Assert.Equal(44 + 9600, new FileInfo(wavs[0]).Length);
         Directory.Delete(dir, true);
     }
+
+    private sealed class FakeTool(Func<JsonElement, string> run) : IAgentTool
+    {
+        public string Name => "fake_tool";
+        public string Description => "fake";
+        public string InputSchema => """{"type":"object"}""";
+        public Task<string> RunAsync(JsonElement input, CancellationToken ct) => Task.FromResult(run(input));
+    }
+
+    private static async Task<JsonDocument> ToolCall(bool allow, string message, IAgentTool tool)
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "shamash-link-" + Guid.NewGuid().ToString("N"));
+        var pipe = new TurnPipeline(new NoStt(), new EchoReplyModel(), new NoTts(), NullLogger.Instance, allow, [tool]);
+        await using var server = new LinkServer(NullLoggerFactory.Instance, "http://127.0.0.1:0", dir, pipe);
+        await server.StartAsync();
+        using var ws = new ClientWebSocket();
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+        await ws.ConnectAsync(new Uri(server.BoundUrl!.Replace("http://", "ws://") + "/"), cts.Token);
+        await ws.SendAsync(Encoding.UTF8.GetBytes(message), WebSocketMessageType.Text, true, cts.Token);
+        var buf = new byte[65536];
+        var r = await ws.ReceiveAsync(buf, cts.Token);
+        var doc = JsonDocument.Parse(buf.AsMemory(0, r.Count));
+        await server.StopAsync();
+        return doc;
+    }
+
+    private sealed class NoStt : ISpeechToText
+    {
+        public Task<string> TranscribeAsync(byte[] wav, CancellationToken ct) => Task.FromResult("");
+    }
+
+    private sealed class NoTts : ITextToSpeech
+    {
+        public async IAsyncEnumerable<ReadOnlyMemory<byte>> SynthesizeAsync(string text, [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct) { await Task.CompletedTask; yield break; }
+    }
+
+    [Fact]
+    public async Task ToolMessage_RunsToolAndReturnsResult()
+    {
+        using var d = await ToolCall(true, """{"type":"tool","name":"fake_tool","input":{"path":"a b"}}""",
+            new FakeTool(i => "got " + i.GetProperty("path").GetString()));
+        var r = d.RootElement;
+        Assert.Equal("tool_result", r.GetProperty("type").GetString());
+        Assert.Equal("fake_tool", r.GetProperty("name").GetString());
+        Assert.Equal("got a b", r.GetProperty("result").GetString());
+        Assert.True(r.GetProperty("ms").GetInt64() >= 0);
+    }
+
+    [Fact]
+    public async Task ToolMessage_ThrownErrorBecomesError()
+    {
+        using var d = await ToolCall(true, """{"type":"tool","name":"fake_tool","input":{}}""",
+            new FakeTool(_ => throw new InvalidOperationException("boom")));
+        Assert.Equal("boom", d.RootElement.GetProperty("error").GetString());
+        Assert.False(d.RootElement.TryGetProperty("result", out _));
+    }
+
+    [Fact]
+    public async Task ToolMessage_RefusedWhenTextTurnsOff()
+    {
+        var ran = false;
+        using var d = await ToolCall(false, """{"type":"tool","name":"fake_tool","input":{}}""",
+            new FakeTool(_ => { ran = true; return "x"; }));
+        Assert.False(ran);
+        Assert.True(d.RootElement.TryGetProperty("error", out _));
+        Assert.False(d.RootElement.TryGetProperty("result", out _));
+    }
+
+    [Fact]
+    public async Task ToolMessage_UnknownTool()
+    {
+        using var d = await ToolCall(true, """{"type":"tool","name":"nope","input":{}}""", new FakeTool(_ => "x"));
+        Assert.Equal("unknown tool nope", d.RootElement.GetProperty("error").GetString());
+    }
 }

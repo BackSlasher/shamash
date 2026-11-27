@@ -3,6 +3,10 @@
 
     client.py ws://host:8777/ input.wav [reply.wav] [--probe] [--fast]
     client.py ws://host:8777/ [reply.wav] --text "<hebrew>"     (text turn, test aid, no WAV)
+    client.py ws://host:8777/ --tool <name> '<json input>'      (run one tool directly, test aid)
+
+--tool prints the tool's result (or "error: <message>") to stdout verbatim. Exit 0 on result,
+2 on error, 3 on unknown tool. Needs allowTextTurns on the PC.
 
 Streams the WAV (16 kHz mono 16-bit, resampled if needed) as 100 ms frames at real-time pace
 (or as fast as possible with --fast), sends `end`, prints every text message with a timestamp,
@@ -104,8 +108,36 @@ async def run(url: str, wav_in: str | None, wav_out: str | None, probe: bool, fa
     return rc
 
 
+async def run_tool(url: str, name: str, raw_input: str) -> int:
+    try:
+        tool_input = json.loads(raw_input)
+    except json.JSONDecodeError as e:
+        print(f"error: input is not JSON: {e}")
+        return 2
+    async with websockets.connect(url, max_size=1 << 20) as ws:
+        await ws.send(json.dumps({"type": "tool", "name": name, "input": tool_input}))
+        try:
+            m = json.loads(await asyncio.wait_for(ws.recv(), timeout=60))
+        except (asyncio.TimeoutError, websockets.ConnectionClosed):
+            print("error: no reply (is allowTextTurns on?)")
+            return 2
+    if "result" in m:
+        sys.stdout.write(m["result"])
+        if not m["result"].endswith("\n"):
+            sys.stdout.write("\n")
+        return 0
+    err = m.get("error", "unknown error")
+    print(f"error: {err}")
+    return 3 if err.startswith("unknown tool") else 2
+
+
 if __name__ == "__main__":
     argv = sys.argv[1:]
+    if "--tool" in argv:
+        i = argv.index("--tool")
+        if i == 0 or i + 2 >= len(argv):
+            raise SystemExit(__doc__)
+        sys.exit(asyncio.run(run_tool(argv[0], argv[i + 1], argv[i + 2])))
     text = None
     if "--text" in argv:
         i = argv.index("--text")

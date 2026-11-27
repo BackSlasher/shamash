@@ -19,6 +19,15 @@ skips speech-to-text and uses the text as the transcript. The phone then sends `
 audio frames before `end` are ignored) and the PC answers as in any turn: `transcript` (the given text), `reply`,
 audio, `done`. With the setting off the `text` field is ignored. The phone app never sends it; `tools/pclink/client.py --text` does.
 
+Test aid, direct tool call: a text message `{"type":"tool","name":"<tool name>","input":{...}}` (no `hello`
+needed), accepted ONLY when `allowTextTurns` is true. The PC looks the tool up in the same list the conversation
+uses, runs it with a 25 s timeout (no model, STT or TTS) and answers with one text message, then closes:
+`{"type":"tool_result","name":"...","ms":N,"result":"<the tool's string>"}`. A tool that throws gives
+`{"type":"tool_result","name":"...","ms":N,"error":"<message>"}`; an unknown name gives
+`{"type":"tool_result","error":"unknown tool X"}`. With `allowTextTurns` off the tool is not run and the PC answers
+`error` ("direct tool calls are disabled") and closes. One log line per call. `tools/pclink/client.py --tool <name> '<json>'`
+sends it (exit 0 result, 2 error, 3 unknown tool).
+
 Frames shorter than 12 bytes are ignored. Messages over 1 MB close the socket.
 
 ## PC → phone

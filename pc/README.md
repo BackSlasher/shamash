@@ -152,6 +152,14 @@ Test from the Android debug build (one quoted string, because adb joins its argu
 adb shell "am broadcast -a net.backslasher.shamash.PCLINK_PROBE -p net.backslasher.shamash --es url ws://<pc-ip>:8777/ --ei seconds 10"
 ```
 
+### Direct tool invocation (test aid)
+
+With `allowTextTurns` on, a text message `{"type":"tool","name":"<tool>","input":{...}}` runs one tool from the conversation's tool list directly (no model, STT or TTS, 25 s timeout) and gets `{"type":"tool_result","name":...,"ms":N,"result":"..."}` or an `error` back, then the socket closes. With the setting off it is refused. For asserting Office/COM behaviour on the VM:
+
+    tools/pclink/client.sh ws://127.0.0.1:8777/ --tool is_document_open '{"path":"Desktop/Reading list.docx"}'
+
+Prints the result verbatim; exit 0 result, 2 error, 3 unknown tool.
+
 ### Windows Firewall
 
 The first time `Shamash.Pc.exe` listens, Windows Defender Firewall may show an allow prompt, or (on a Public network profile, or when no one can answer the prompt) silently block inbound connections. Allow it from an elevated PowerShell:
