@@ -374,4 +374,67 @@ public class ConversationTests
         Assert.Equal(["config: elevenLabsKey=true anthropicApiKey=false llm=claude"], log.Lines);
         Assert.DoesNotContain("SECRET", string.Join("\n", log.Lines));
     }
+
+    private sealed class UsageTool : IAgentTool
+    {
+        public string Name => "t";
+        public string Description => "d";
+        public string InputSchema => """{"type":"object","properties":{}}""";
+        public Task<string> RunAsync(JsonElement input, CancellationToken ct)
+        {
+            // Stands in for translate_document: a model call made inside a tool adds to the same turn.
+            UsageScope.Record(new LlmUsage(1, 5, 0, 0, 7));
+            return Task.FromResult("r");
+        }
+    }
+
+    private sealed class UsageConversation : IToolConversation
+    {
+        private int _n;
+        public Task<ModelStep> NextAsync(bool withTools, CancellationToken ct)
+        {
+            var step = _n++ == 0
+                ? new ModelStep("", [new ToolUseRequest("a", "t", JsonDocument.Parse("{}").RootElement.Clone())], null, new LlmUsage(1, 10, 100, 0, 20))
+                : new ModelStep("done", [], null, new LlmUsage(1, 3, 0, 100, 4));
+            return Task.FromResult(step);
+        }
+        public void AddToolResults(ModelStep step, IReadOnlyList<(string Id, string Text)> results) { }
+    }
+
+    private sealed class UsageLlm : IToolReplyModel
+    {
+        public Task<string> ReplyAsync(IReadOnlyList<ChatTurn> history, string userText, CancellationToken ct) => ReplyAsync(history, userText, [], ct);
+        public Task<string> ReplyAsync(IReadOnlyList<ChatTurn> history, string userText, List<ToolCallRecord> toolCalls, CancellationToken ct) =>
+            ToolLoop.RunAsync(new UsageConversation(), [new UsageTool()], toolCalls, null, ct);
+    }
+
+    [Fact]
+    public async Task Turn_SumsUsageOverModelCalls_AndWritesItToJson()
+    {
+        var p = Pipeline(Stt("x"), new UsageLlm(), new FakeTts(_ => Chunks(10)));
+        var r = await p.RunAsync(OneSecond, 16000, new RecordingSender(), CancellationToken.None);
+        Assert.Equal(new LlmUsage(3, 18, 100, 100, 31), r.Usage);
+        using var d = JsonDocument.Parse(r.ToJson());
+        var u = d.RootElement.GetProperty("usage");
+        Assert.Equal(3, u.GetProperty("calls").GetInt32());
+        Assert.Equal(18, u.GetProperty("input").GetInt64());
+        Assert.Equal(100, u.GetProperty("cacheWrite").GetInt64());
+        Assert.Equal(100, u.GetProperty("cacheRead").GetInt64());
+        Assert.Equal(31, u.GetProperty("output").GetInt64());
+    }
+
+    [Fact]
+    public void ClaudeParams_CacheSystemBlockAndLastTool()
+    {
+        var tools = new IAgentTool[] { new UsageTool(), new UsageTool() };
+        var defs = ClaudeReplyModel.BuildToolDefs(tools);
+        var pr = ClaudeReplyModel.BuildParams("m", "sys", defs, [], true);
+        Assert.NotNull(pr.System);
+        Assert.True(pr.System!.TryPickTextBlockParams(out var blocks));
+        var sys = Assert.Single(blocks!);
+        Assert.Equal("sys", sys.Text);
+        Assert.NotNull(sys.CacheControl);
+        Assert.True(defs[1].TryPickTool(out var last) && last!.CacheControl is not null);
+        Assert.True(defs[0].TryPickTool(out var first) && first!.CacheControl is null);
+    }
 }

@@ -202,9 +202,9 @@ public sealed class ReadDocumentTool(IReadOnlyList<string> roots) : IAgentTool
     public string Name => "read_document";
     public string Description =>
         "Reads the text of one document (.docx, .doc, .rtf, .pdf, .xlsx, .txt, .md, .csv) from the user's document folders. " +
-        "path is the full path, or 'folder/name' exactly as search_documents showed it. Long text is cut at max_chars.";
+        "path is the full path, or 'folder/name' exactly as search shows it (Desktop/..., Documents/...), or a Hebrew root name (מסמכים, שולחן העבודה). Long text is cut at max_chars.";
     public string InputSchema => """
-        {"type":"object","properties":{"path":{"type":"string","description":"Full path, or folder/name as listed by search_documents"},"max_chars":{"type":"integer","description":"Maximum characters to return, default 6000"}},"required":["path"]}
+        {"type":"object","properties":{"path":{"type":"string","description":"As search shows it (Desktop/..., Documents/...), a Hebrew root name, or a full path"},"max_chars":{"type":"integer","description":"Maximum characters to return, default 6000"}},"required":["path"]}
         """;
 
     public Task<string> RunAsync(JsonElement input, CancellationToken ct) => Task.Run(() => Run(input), ct);
@@ -233,31 +233,62 @@ public sealed class ReadDocumentTool(IReadOnlyList<string> roots) : IAgentTool
         }
     }
 
-    /// <summary>Full path if it is (or maps to) a location under a root; null when outside every root.</summary>
-    internal static string? Resolve(string path, IReadOnlyList<string> roots)
+    /// <summary>Full path under a root (existing file preferred), or null when outside every root. See <see cref="PathResolver"/>.</summary>
+    internal static string? Resolve(string path, IReadOnlyList<string> roots) => PathResolver.ResolveFile(path, roots);
+}
+
+/// <summary>
+/// The one resolver for every folder or file argument. Accepts, in order: an absolute path under a root; "RootName/relative"
+/// (as search_documents shows it); a Hebrew root alias (מסמכים, שולחן העבודה) optionally followed by "/relative";
+/// a bare relative path tried under each root. The PathGuard root check applies to every candidate. A path that exists nowhere
+/// still resolves in the file variant (so callers can say "file not found"); the folder variant returns null for a missing folder.
+/// </summary>
+public static class PathResolver
+{
+    private static readonly Dictionary<string, string> Aliases = new(StringComparer.OrdinalIgnoreCase)
     {
+        ["מסמכים"] = "Documents", ["שולחן העבודה"] = "Desktop", ["שולחן עבודה"] = "Desktop",
+    };
+
+    public static string? ResolveFolder(string path, IReadOnlyList<string> roots)
+    {
+        var r = Resolve(path, roots, Directory.Exists);
+        return r is null ? null : Path.TrimEndingDirectorySeparator(r);
+    }
+
+    public static string? ResolveFile(string path, IReadOnlyList<string> roots) => Resolve(path, roots, File.Exists) ?? Resolve(path, roots, _ => true);
+
+    private static string? Resolve(string path, IReadOnlyList<string> roots, Func<string, bool> exists)
+    {
+        path = path.Trim();
+        if (path.Length == 0) return null;
         if (Path.IsPathFullyQualified(path))
-            return PathGuard.IsUnderRoots(path, roots) ? Path.GetFullPath(path) : null;
-        // relative form "folder/name": first "<rootname>/rest" under the root of that name, then the whole path under each root;
-        // the guard still applies after normalising "..".
-        var rel = path.Replace('\\', '/').TrimStart('/');
-        var slash = rel.IndexOf('/');
-        if (slash > 0)
         {
-            var head = rel[..slash];
-            var rest = rel[(slash + 1)..];
-            foreach (var root in roots.Where(r => string.Equals(PathGuard.RootName(r), head, StringComparison.OrdinalIgnoreCase)))
-                if (TryUnder(root, rest, roots) is { } hit) return hit;
+            string full;
+            try { full = Path.GetFullPath(path); } catch (Exception e) when (e is ArgumentException or NotSupportedException or PathTooLongException) { return null; }
+            return PathGuard.IsUnderRoots(full, roots) && exists(full) ? full : null;
         }
+        var rel = path.Replace('\\', '/').Trim('/');
+        var slash = rel.IndexOf('/');
+        var head = slash > 0 ? rel[..slash] : rel;
+        var rest = slash > 0 ? rel[(slash + 1)..] : "";
+        // "<rootname>/rest", then the Hebrew alias form
+        var names = new List<string> { head };
+        if (Aliases.TryGetValue(head, out var english)) names.Add(english);
+        foreach (var name in names)
+            foreach (var root in roots.Where(r => string.Equals(PathGuard.RootName(r), name, StringComparison.OrdinalIgnoreCase)))
+                if (TryUnder(root, rest, roots, exists) is { } hit) return hit;
         foreach (var root in roots)
-            if (TryUnder(root, rel, roots) is { } hit) return hit;
+            if (TryUnder(root, rel, roots, exists) is { } hit) return hit;
         return null;
     }
 
-    private static string? TryUnder(string root, string rel, IReadOnlyList<string> roots)
+    private static string? TryUnder(string root, string rel, IReadOnlyList<string> roots, Func<string, bool> exists)
     {
-        var candidate = Path.GetFullPath(Path.Combine(root, rel.Replace('/', Path.DirectorySeparatorChar)));
-        return PathGuard.IsUnderRoots(candidate, roots) && File.Exists(candidate) ? candidate : null;
+        string candidate;
+        try { candidate = Path.GetFullPath(Path.Combine(root, rel.Replace('/', Path.DirectorySeparatorChar))); }
+        catch (Exception e) when (e is ArgumentException or NotSupportedException or PathTooLongException) { return null; }
+        return PathGuard.IsUnderRoots(candidate, roots) && exists(candidate) ? candidate : null;
     }
 }
 

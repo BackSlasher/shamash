@@ -281,7 +281,7 @@ public abstract class WindowToolBase(IReadOnlyList<string> roots, IOpenDocuments
     public abstract string Name { get; }
     public abstract string Description { get; }
     public string InputSchema => """
-        {"type":"object","properties":{"path":{"type":"string","description":"Full path, or folder/name as listed by search_documents"}},"required":["path"]}
+        {"type":"object","properties":{"path":{"type":"string","description":"As search shows it (Desktop/..., Documents/...), a Hebrew root name, or a full path"}},"required":["path"]}
         """;
 
     public Task<string> RunAsync(JsonElement input, CancellationToken ct) => Task.Run(() =>
@@ -314,7 +314,7 @@ public abstract class WindowToolBase(IReadOnlyList<string> roots, IOpenDocuments
 public sealed class ShowInExplorerTool(IReadOnlyList<string> roots) : WindowToolBase(roots)
 {
     public override string Name => "show_in_explorer";
-    public override string Description => "Opens the file manager (Explorer) at the folder of a document with the file selected. Returns the folder name.";
+    public override string Description => "Opens the file manager (Explorer) at the folder of a document with the file selected. Returns the folder name. path is as search shows it (Desktop/..., Documents/...), a Hebrew root name, or a full path.";
 
     [SupportedOSPlatform("windows")]
     protected override string RunWindows(string full)

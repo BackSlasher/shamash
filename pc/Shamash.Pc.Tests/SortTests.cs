@@ -358,4 +358,23 @@ public class SortTests
     {
         public IReadOnlyList<DocumentHit> Search(IReadOnlyList<string> roots, string query, IReadOnlyList<string> words, string kind, int max, CancellationToken ct) => hits;
     }
+
+    [Fact]
+    public void Start_TwoRoots_AcceptsRootNameAndHebrewAliasForFolderAndTarget()
+    {
+        using var d = new TempDir();
+        var desk = Path.Combine(d.Path, "Desktop");
+        var docs = Path.Combine(d.Path, "Documents");
+        Directory.CreateDirectory(desk);
+        Directory.CreateDirectory(Path.Combine(docs, "sub"));
+        File.WriteAllText(Path.Combine(docs, "sub", "x.txt"), "hello");
+        foreach (var f in new[] { "Documents/sub", "מסמכים/sub" })
+        {
+            var store = new SortStore(Path.Combine(d.Path, "s-" + Guid.NewGuid().ToString("N") + ".json"), new OrganizeStore(Path.Combine(d.Path, "m.log")), [desk, docs], 3000);
+            var r = store.Start(J(Obj(("folder", f), ("target_root", "מסמכים/sub"))));
+            Assert.DoesNotContain("error:", r);
+            Assert.Equal(Path.Combine(docs, "sub"), store.ResolveTarget("Documents/sub"));
+            Assert.Equal(docs, store.ResolveTarget("מסמכים"));
+        }
+    }
 }

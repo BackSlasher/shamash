@@ -84,6 +84,8 @@ public sealed class TurnResult
     public string? CancelledAt { get; set; }
     public bool Done { get; set; }
     public List<ToolCallRecord> ToolCalls { get; } = [];
+    /// <summary>Sum over every model call of the turn (chat loop and translator).</summary>
+    public LlmUsage Usage { get; set; } = LlmUsage.Zero;
 
     public string ToJson() => JsonSerializer.Serialize(new
     {
@@ -93,6 +95,7 @@ public sealed class TurnResult
         ttsBytes = TtsBytes,
         error = ErrorStage is null ? null : new { stage = ErrorStage, message = ErrorMessage },
         toolCalls = ToolCalls.Select(c => new { name = c.Name, input = c.Input, ms = c.Ms, resultChars = c.ResultChars }),
+        usage = new { calls = Usage.Calls, input = Usage.Input, cacheWrite = Usage.CacheWrite, cacheRead = Usage.CacheRead, output = Usage.Output },
         cancelledAt = CancelledAt,
         done = Done,
     }, new JsonSerializerOptions(TurnJson.Options) { WriteIndented = true });
@@ -157,6 +160,7 @@ public sealed class TurnPipeline(ISpeechToText stt, IReplyModel llm, ITextToSpee
     public async Task<TurnResult> RunAsync(byte[] pcm, int sampleRate, ITurnSender sender, CancellationToken ct, string? text = null)
     {
         var result = new TurnResult();
+        var usage = UsageScope.Begin();
         var total = Stopwatch.StartNew();
         var stage = "stt";
         try
@@ -267,6 +271,8 @@ public sealed class TurnPipeline(ISpeechToText stt, IReplyModel llm, ITextToSpee
             try { await sender.SendTextAsync(TurnJson.Message("error", ("stage", st), ("message", msg)), ct); }
             catch (Exception) { /* peer is gone */ }
         }
+        result.Usage = usage.Total;
+        if (result.Usage.Calls > 0) log.LogInformation("llm usage: {Usage}", result.Usage);
         return result;
 
         void Finish()
@@ -317,27 +323,49 @@ public sealed class ClaudeReplyModel(string? apiKey, string model, IReadOnlyList
         return await ToolLoop.RunAsync(conversation, _tools, toolCalls, log, ct);
     }
 
+    /// <summary>
+    /// Tool definitions with a cache breakpoint on the last one: the prefix (all tools) is identical on every call, so the
+    /// API serves it from the prompt cache. Request order is tools, system, messages; nothing dynamic precedes the breakpoints.
+    /// </summary>
+    public static List<ToolUnion> BuildToolDefs(IReadOnlyList<IAgentTool> tools)
+    {
+        var defs = new List<ToolUnion>();
+        for (var i = 0; i < tools.Count; i++)
+        {
+            var d = SdkConversation.ToDefinition(tools[i]);
+            defs.Add(i == tools.Count - 1 ? d with { CacheControl = new CacheControlEphemeral() } : d);
+        }
+        return defs;
+    }
+
+    /// <summary>The request for one model call. The system prompt is a text block carrying a cache breakpoint (cached after the tools).</summary>
+    public static MessageCreateParams BuildParams(string model, string systemPrompt, List<ToolUnion> toolDefs, List<MessageParam> messages, bool withTools)
+    {
+        var p = new MessageCreateParams
+        {
+            Model = model,
+            MaxTokens = MaxTokens,
+            System = new List<TextBlockParam> { new() { Text = systemPrompt, CacheControl = new CacheControlEphemeral() } },
+            Messages = messages,
+            OutputConfig = new() { Effort = Effort.Low },
+        };
+        if (toolDefs.Count > 0)
+        {
+            // Tools stay declared after the round limit (the history holds tool_use blocks); tool_choice none forces a text answer.
+            p = p with { Tools = toolDefs };
+            if (!withTools) p = p with { ToolChoice = new ToolChoiceNone() };
+        }
+        return p;
+    }
+
     /// <summary>The Anthropic SDK side of the tool loop: Messages.Create, content echo, tool_result turns.</summary>
     private sealed class SdkConversation(AnthropicClient client, string model, IReadOnlyList<IAgentTool> tools, List<MessageParam> messages) : IToolConversation
     {
-        private readonly List<ToolUnion> _toolDefs = [.. tools.Select(ToDefinition)];
+        private readonly List<ToolUnion> _toolDefs = BuildToolDefs(tools);
 
         public async Task<ModelStep> NextAsync(bool withTools, CancellationToken ct)
         {
-            var p = new MessageCreateParams
-            {
-                Model = model,
-                MaxTokens = MaxTokens,
-                System = SystemPrompt,
-                Messages = messages,
-                OutputConfig = new() { Effort = Effort.Low },
-            };
-            if (_toolDefs.Count > 0)
-            {
-                // Tools stay declared after the round limit (the history holds tool_use blocks); tool_choice none forces a text answer.
-                p = p with { Tools = _toolDefs };
-                if (!withTools) p = p with { ToolChoice = new ToolChoiceNone() };
-            }
+            var p = BuildParams(model, SystemPrompt, _toolDefs, messages, withTools);
             var response = await client.Messages.Create(p, cancellationToken: ct);
             if (response.StopReason == StopReason.Refusal)
                 throw new StageException("llm", "the model refused to answer");
@@ -349,7 +377,9 @@ public sealed class ClaudeReplyModel(string? apiKey, string model, IReadOnlyList
                 else if (block.TryPickToolUse(out ToolUseBlock? u) && u is not null)
                     uses.Add(new ToolUseRequest(u.ID, u.Name, JsonSerializer.SerializeToElement(u.Input)));
             }
-            return new ModelStep(sb.ToString(), uses, response.Content);
+            var ru = response.Usage;
+            var usage = new LlmUsage(1, ru.InputTokens, ru.CacheCreationInputTokens ?? 0, ru.CacheReadInputTokens ?? 0, ru.OutputTokens);
+            return new ModelStep(sb.ToString(), uses, response.Content, usage);
         }
 
         public void AddToolResults(ModelStep step, IReadOnlyList<(string Id, string Text)> results)
@@ -376,7 +406,7 @@ public sealed class ClaudeReplyModel(string? apiKey, string model, IReadOnlyList
             messages.Add(new UserMessageParam { Content = toolResults });
         }
 
-        private static ToolUnion ToDefinition(IAgentTool t)
+        public static Tool ToDefinition(IAgentTool t)
         {
             using var doc = JsonDocument.Parse(t.InputSchema);
             var root = doc.RootElement;

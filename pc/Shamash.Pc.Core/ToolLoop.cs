@@ -20,7 +20,39 @@ public sealed record ToolCallRecord(string Name, string Input, long Ms, int Resu
 public sealed record ToolUseRequest(string Id, string Name, JsonElement Input);
 
 /// <summary>One model response: the text and the tool calls it asked for. Raw is the provider's own content, handed back to the conversation.</summary>
-public sealed record ModelStep(string Text, IReadOnlyList<ToolUseRequest> ToolUses, object? Raw = null);
+public sealed record ModelStep(string Text, IReadOnlyList<ToolUseRequest> ToolUses, object? Raw = null, LlmUsage? Usage = null);
+
+/// <summary>Token counts of one or more model calls (Anthropic usage: input excludes cached tokens).</summary>
+public sealed record LlmUsage(int Calls, long Input, long CacheWrite, long CacheRead, long Output)
+{
+    public static readonly LlmUsage Zero = new(0, 0, 0, 0, 0);
+    public static LlmUsage operator +(LlmUsage a, LlmUsage b) =>
+        new(a.Calls + b.Calls, a.Input + b.Input, a.CacheWrite + b.CacheWrite, a.CacheRead + b.CacheRead, a.Output + b.Output);
+    public override string ToString() => $"calls={Calls} input={Input} cacheWrite={CacheWrite} cacheRead={CacheRead} output={Output}";
+}
+
+/// <summary>
+/// Per-turn usage accumulator. <see cref="Begin"/> installs a fresh one in an AsyncLocal, so every model call made
+/// under that turn (the tool loop and ClaudeTranslator, which runs inside a tool) adds to it without any plumbing
+/// through the tool interfaces. Calls outside a turn are ignored.
+/// </summary>
+public sealed class UsageScope
+{
+    private static readonly AsyncLocal<UsageScope?> Current = new();
+    private LlmUsage _total = LlmUsage.Zero;
+    private readonly object _lock = new();
+
+    public LlmUsage Total { get { lock (_lock) return _total; } }
+
+    public static UsageScope Begin() { var s = new UsageScope(); Current.Value = s; return s; }
+
+    public static void Record(LlmUsage? u)
+    {
+        var s = Current.Value;
+        if (s is null || u is null) return;
+        lock (s._lock) s._total += u;
+    }
+}
 
 /// <summary>The "call the model" side of the loop, so the loop can be tested without the SDK.</summary>
 public interface IToolConversation
@@ -43,6 +75,7 @@ public static class ToolLoop
         {
             ct.ThrowIfCancellationRequested();
             var step = await conversation.NextAsync(tools.Count > 0, ct);
+            UsageScope.Record(step.Usage);
             if (step.ToolUses.Count == 0 || tools.Count == 0) return step.Text;
 
             var results = new List<(string, string)>();
@@ -55,7 +88,9 @@ public static class ToolLoop
         }
         ct.ThrowIfCancellationRequested();
         log?.LogWarning("tools: round limit {Max} reached, asking for a final answer without tools", MaxRounds);
-        return (await conversation.NextAsync(false, ct)).Text;
+        var last = await conversation.NextAsync(false, ct);
+        UsageScope.Record(last.Usage);
+        return last.Text;
     }
 
     private static async Task<string> RunOneAsync(ToolUseRequest use, IReadOnlyList<IAgentTool> tools,

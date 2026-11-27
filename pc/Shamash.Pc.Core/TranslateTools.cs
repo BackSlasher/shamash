@@ -101,6 +101,8 @@ public sealed class ClaudeTranslator(string? apiKey, string model, Func<string, 
             Messages = [new UserMessageParam { Content = user }],
             OutputConfig = new() { Effort = Effort.Low },
         }, cancellationToken: ct);
+        var u = response.Usage;
+        UsageScope.Record(new LlmUsage(1, u.InputTokens, u.CacheCreationInputTokens ?? 0, u.CacheReadInputTokens ?? 0, u.OutputTokens));
         if (response.StopReason == StopReason.Refusal) throw new InvalidOperationException("the model refused");
         var sb = new StringBuilder();
         foreach (var block in response.Content)
@@ -122,7 +124,7 @@ public sealed class TranslateDocumentTool(IReadOnlyList<string> roots, ITranslat
         "A .docx keeps its styles, headings, tables and lists; a .pdf comes out as a .docx. path is the full path, or 'folder/name' as search_documents showed it. " +
         "With only_summary true no file is written and a five-sentence summary in the target language is returned instead. Long documents can take a minute or more.";
     public string InputSchema => """
-        {"type":"object","properties":{"path":{"type":"string","description":"Full path, or folder/name as listed by search_documents"},"target_language":{"type":"string","enum":["en","he"],"description":"en = English, he = Hebrew"},"only_summary":{"type":"boolean","description":"Return a 5-sentence summary instead of a translated file, default false"}},"required":["path","target_language"]}
+        {"type":"object","properties":{"path":{"type":"string","description":"As search shows it (Desktop/..., Documents/...), a Hebrew root name, or a full path"},"target_language":{"type":"string","enum":["en","he"],"description":"en = English, he = Hebrew"},"only_summary":{"type":"boolean","description":"Return a 5-sentence summary instead of a translated file, default false"}},"required":["path","target_language"]}
         """;
 
     public async Task<string> RunAsync(JsonElement input, CancellationToken ct)

@@ -332,4 +332,27 @@ public class DocumentToolTests
     {
         public IReadOnlyList<DocumentHit> Search(IReadOnlyList<string> roots, string query, IReadOnlyList<string> words, string kind, int max, CancellationToken ct) => hits;
     }
+
+    [Fact]
+    public void PathResolver_FolderVariant_AllForms()
+    {
+        using var t = new TempDir();
+        var desk = Path.Combine(t.Path, "Desktop");
+        var docs = Path.Combine(t.Path, "Documents");
+        Directory.CreateDirectory(Path.Combine(desk, "Desktop stuff"));
+        Directory.CreateDirectory(Path.Combine(docs, "מאמרים"));
+        var roots = new[] { desk, docs };
+        var want = Path.Combine(docs, "מאמרים");
+        foreach (var p in new[] { "Documents/מאמרים", "documents\\מאמרים", "מסמכים/מאמרים", "מאמרים", want, want + Path.DirectorySeparatorChar })
+            Assert.Equal(want, PathResolver.ResolveFolder(p, roots));
+        Assert.Equal(Path.Combine(desk, "Desktop stuff"), PathResolver.ResolveFolder("Desktop/Desktop stuff", roots));
+        Assert.Equal(Path.Combine(desk, "Desktop stuff"), PathResolver.ResolveFolder("שולחן העבודה/Desktop stuff", roots));
+        Assert.Equal(docs, PathResolver.ResolveFolder("מסמכים", roots));
+        Assert.Null(PathResolver.ResolveFolder("Documents/../../etc", roots));
+        Assert.Null(PathResolver.ResolveFolder(t.Path, roots));
+        Assert.Null(PathResolver.ResolveFolder("nope", roots));
+        File.WriteAllText(Path.Combine(want, "f.txt"), "x");
+        Assert.Equal(Path.Combine(want, "f.txt"), PathResolver.ResolveFile("מסמכים/מאמרים/f.txt", roots));
+        Assert.False(File.Exists(PathResolver.ResolveFile("מסמכים/מאמרים", roots)));
+    }
 }

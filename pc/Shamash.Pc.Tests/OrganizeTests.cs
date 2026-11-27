@@ -150,4 +150,24 @@ public class OrganizeTests
         Assert.Contains("groups: 0", Env.Call(e.Find, JsonSerializer.Serialize(new { folder = e.Root.Path, include_subfolders = false })));
         Assert.Contains("groups: 1", e.FindIn(e.Root.Path));
     }
+
+    [Fact]
+    public void FindDuplicates_TwoRoots_AcceptsRootNameAndHebrewAlias()
+    {
+        using var d = new TempDir();
+        var desk = Path.Combine(d.Path, "Desktop");
+        var docs = Path.Combine(d.Path, "Documents");
+        var sub = Path.Combine(docs, "sub");
+        Directory.CreateDirectory(desk);
+        Directory.CreateDirectory(sub);
+        File.WriteAllText(Path.Combine(sub, "a.txt"), "same text here for both");
+        File.WriteAllText(Path.Combine(sub, "b.txt"), "same text here for both");
+        var store = new OrganizeStore(Path.Combine(d.Path, "m.log"), _ => { });
+        var find = OrganizeStore.CreateTools([desk, docs], store)[0];
+        foreach (var f in new[] { "Documents/sub", "documents/sub", "מסמכים/sub", "sub", sub })
+        {
+            var r = find.RunAsync(JsonDocument.Parse(JsonSerializer.Serialize(new { folder = f })).RootElement, default).GetAwaiter().GetResult();
+            Assert.Contains("duplicate files: 1", r);
+        }
+    }
 }

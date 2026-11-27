@@ -76,9 +76,9 @@ public sealed class FindDuplicatesTool(IReadOnlyList<string> roots, OrganizeStor
     public string Description =>
         "Scans a folder for exact and near-duplicate files and makes a PLAN to move the extra copies into a subfolder named כפולים. Nothing is moved. " +
         "The plan is also written as a text file in the folder and opened on the screen. Describe the plan to the user and ask for confirmation before apply_plan. " +
-        "folder is a full path or a folder relative to a document root.";
+        "folder is as search shows it (Desktop/..., Documents/...), a Hebrew root name (מסמכים, שולחן העבודה), or a full path.";
     public string InputSchema => """
-        {"type":"object","properties":{"folder":{"type":"string","description":"Full path, or folder relative to a document root"},"include_subfolders":{"type":"boolean","description":"Default true"}},"required":["folder"]}
+        {"type":"object","properties":{"folder":{"type":"string","description":"Folder as search shows it (Desktop/..., Documents/...), a Hebrew root name, or a full path"},"include_subfolders":{"type":"boolean","description":"Default true"}},"required":["folder"]}
         """;
 
     public Task<string> RunAsync(JsonElement input, CancellationToken ct) => Task.Run(() => Run(input, ct), ct);
@@ -193,18 +193,7 @@ public sealed class FindDuplicatesTool(IReadOnlyList<string> roots, OrganizeStor
         return sb.ToString().TrimEnd();
     }
 
-    internal static string? ResolveFolder(IReadOnlyList<string> roots, string path)
-    {
-        if (Path.IsPathFullyQualified(path))
-            return PathGuard.IsUnderRoots(path, roots) ? Path.TrimEndingDirectorySeparator(Path.GetFullPath(path)) : null;
-        var rel = path.Replace('\\', Path.DirectorySeparatorChar).Replace('/', Path.DirectorySeparatorChar);
-        foreach (var root in roots)
-        {
-            var c = Path.GetFullPath(Path.Combine(root, rel));
-            if (PathGuard.IsUnderRoots(c, roots) && Directory.Exists(c)) return Path.TrimEndingDirectorySeparator(c);
-        }
-        return null;
-    }
+    internal static string? ResolveFolder(IReadOnlyList<string> roots, string path) => PathResolver.ResolveFolder(path, roots);
 
     internal static string? Hash(string path)
     {
