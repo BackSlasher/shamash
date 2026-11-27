@@ -37,7 +37,7 @@ button{padding:.4rem .8rem}
 <dt>Tokens today</dt><dd>{% if c.usage %}{{ c.usage.get('calls', 0) }} calls; in {{ c.usage.get('input', 0) }}, cache read {{ c.usage.get('cacheRead', 0) }}, cache write {{ c.usage.get('cacheWrite', 0) }}, out {{ c.usage.get('output', 0) }}; est. ${{ '%.2f' % c.cost }}{% else %}-{% endif %}</dd>
 <dt>Last error</dt><dd>{% if l.get('lastError') %}<span class="err">{{ l.lastError.get('at') }} [{{ l.lastError.get('stage') }}] {{ l.lastError.get('message') }}</span>{% else %}none{% endif %}</dd>
 {% if l.get('phone') %}<dt>Phone</dt><dd>{{ l.phone.get('battery', '?') }}%{% if l.phone.get('charging') %}, charging{% else %}, not charging{% endif %}; seen {{ relative(l.phone.get('lastSeenAt')) }}</dd>{% endif %}
-{% if l.get('machine') %}<dt>Machine</dt><dd>{{ l.machine.get('os', '-') }}; Office {{ 'yes' if l.machine.get('officeInstalled') else 'no' }}; index {{ 'ok' if l.machine.get('indexOk') else 'not ok' }}</dd>{% endif %}
+{% if l.get('machine') %}<dt>Machine</dt><dd>{{ l.machine.get('os', '-') }}; Office {{ 'yes' if l.machine.get('officeInstalled') else 'no' }}; index {{ 'unknown' if l.machine.get('indexOk') is none else ('ok' if l.machine.get('indexOk') else 'not ok') }}</dd>{% endif %}
 </dl>
 <details><summary>Last {{ c.heartbeats|length }} heartbeats</summary>
 <table><tr><th>At</th><th>Version</th><th>Health</th><th>Turns</th><th>Uptime</th><th>Error</th></tr>
