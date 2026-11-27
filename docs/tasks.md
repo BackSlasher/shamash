@@ -73,6 +73,7 @@ Confirmation needed: before acting.
 Seed data for the VM: the folder above with exact copies, older versions, "Copy of" files.
 Done when: no file lost (count before = count after), duplicates grouped.
 Owner notes (2026-11-27): describing a rearrangement by voice is not realistic. Design: he triggers, the agent proposes a plan (spoken 3-sentence summary + plain list on the PC screen), he approves, moves only, never deletes, with a move journal for undo. First slice: deduplication alone.
+Owner notes (2026-11-27, later): the interesting files are .docx; the numerous .doc/.rtf/.pdf are cold storage. The saba consolidation plan is good, but he gave up on presenting it in full for approval, so the end result is Shamash consolidating the "salad" folders (סלט למיון וסידור / לסידור piles) piecemeal, a few files per sitting, with the grandfather saying yes or no by voice (see "Sort a messy folder piecemeal"). He may find an Office ISO for the VM. Guards: `find_duplicates` and the sorting tools refuse a folder with more than 3000 files (`maxOrganizeFiles`); `~$` lock files and `.lnk` shortcuts are skipped everywhere; default document roots stay Desktop and Documents, D: must be added explicitly.
 
 ### Help with email                                     status: idea
 Ask: "יש לי מייל חדש?", "תקרא לי את המייל מדני", "תענה לו שאני מסכים"
@@ -142,6 +143,17 @@ Seed data for the VM: an open dirty document and an open clean one.
 Done when: dirty and clean documents both close correctly.
 Owner environment (2026-11-27): Office 2016 is on his PC, so Word automation is available; blocked only on an Office for the VM.
 
+### Sort a messy folder piecemeal                       status: tested-vm
+Ask: "בוא נסדר את התיקייה סלט"
+Also phrased as: "תעזור לי לסדר את הסלט למיון", "נמשיך לסדר", "כן", "לא, דלג", "תחזיר את זה", "מספיק להיום"
+What should happen: `sort_folder_start` creates or resumes a session for the folder and lists the existing destination folders (under the Desktop). For each file `sort_folder_next` returns the newest unsorted file with a text excerpt and evidence from the other folders under the document roots: identical copies elsewhere (SHA-256), similar versions elsewhere (word 3-gram similarity >= 0.6), and the two folders whose documents are most similar in content. Shamash describes the file in one sentence and asks about ONE destination: an identical copy exists -> "move this copy to כפולים?"; a similar version exists in folder X -> "move it there?"; it looks like the documents in folder Y -> "move it there?"; otherwise a new folder. "כן" -> `sort_folder_move` (the file goes to the folder, its exact duplicates in the salad folder go to כפולים); "לא" / "דלג" -> `sort_folder_skip` (asked again next sitting, unless he says never); "תחזיר את זה" -> `undo_last_move`; after every 5 files Shamash says how many remain and asks whether to continue; "מספיק להיום" stops and says the session can be resumed. Sessions persist in `%LocalAppData%\Shamash\sort-sessions.json`.
+Touches: the salad folder and the Desktop folders, the move journal.
+Must never: delete or overwrite; move without a spoken yes; touch .doc/.rtf/.pdf content (they are listed by name and date only, no excerpt for .doc/.rtf).
+Spoken result: "זה מכתב לעירייה מלפני שנה, להעביר לתיקייה מכתבים?" then "הועבר, נשארו 40".
+Confirmation needed: before each move.
+Seed data for the VM: a salad folder with ~30 mixed files (some exact copies of files in other Desktop folders, a few older versions, .doc and .pdf files) plus 5-6 topic folders with a handful of documents each.
+Done when: files land in the right folders by voice, copies end up in כפולים, "תחזיר את זה" restores the last file and its copies, a restart resumes where it stopped.
+
 <!-- Add tasks below. Printing, calendar, reading a PDF aloud, summarising a long document, dictating a letter, renaming files, finding a photo... -->
 
 ## Findings from the saba inventory (2026-11-27)
@@ -163,7 +175,7 @@ Owner environment (2026-11-27): Office 2016 is on his PC, so Word automation is 
 4. Deduplicate a folder (first slice of Organise): clean spoken summary, moves only.
 5. Translate a document (OpenXML, no Word needed).
 6. Close a document: waits for the Office edition answer (Word automation).
-7. Organise beyond dedup: propose-then-approve plans.
+7. Sort the salad folders piecemeal (sort_folder_* tools): built, VM test pending.
 8. Email: last, after the mail client is known.
 
 # Inbox

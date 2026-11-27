@@ -56,14 +56,14 @@ public sealed class OrganizeStore(string journalPath, Action<string>? openFile =
         Process.Start(new ProcessStartInfo(path) { UseShellExecute = true })?.Dispose();
     }
 
-    public static IReadOnlyList<IAgentTool> CreateTools(IReadOnlyList<string> roots, OrganizeStore? store = null)
+    public static IReadOnlyList<IAgentTool> CreateTools(IReadOnlyList<string> roots, OrganizeStore? store = null, int maxFiles = ShamashSettings.DefaultMaxOrganizeFiles)
     {
         store ??= Default;
-        return [new FindDuplicatesTool(roots, store), new ApplyPlanTool(store), new UndoPlanTool(store)];
+        return [new FindDuplicatesTool(roots, store, maxFiles), new ApplyPlanTool(store), new UndoPlanTool(store)];
     }
 }
 
-public sealed class FindDuplicatesTool(IReadOnlyList<string> roots, OrganizeStore store) : IAgentTool
+public sealed class FindDuplicatesTool(IReadOnlyList<string> roots, OrganizeStore store, int maxFiles = ShamashSettings.DefaultMaxOrganizeFiles) : IAgentTool
 {
     public const long MaxFileBytes = 50L * 1024 * 1024;
     public const double NearThreshold = 0.8;
@@ -104,8 +104,10 @@ public sealed class FindDuplicatesTool(IReadOnlyList<string> roots, OrganizeStor
                 var rel = Path.GetRelativePath(folder, f);
                 if (rel.StartsWith(OrganizeStore.DuplicatesFolder + Path.DirectorySeparatorChar, StringComparison.Ordinal)) continue;
                 if (Path.GetFileName(f).StartsWith("תוכנית סידור", StringComparison.Ordinal)) continue;
+                if (FileSkip.IsIgnored(f)) continue;
                 var fi = new FileInfo(f);
                 if (fi.Length > MaxFileBytes) continue;
+                if (items.Count >= maxFiles) return $"error: folder has more than {maxFiles} files (limit maxOrganizeFiles); choose a smaller folder";
                 items.Add(new Item(f, rel, fi.Length, fi.LastWriteTimeUtc));
             }
         }
@@ -204,7 +206,7 @@ public sealed class FindDuplicatesTool(IReadOnlyList<string> roots, OrganizeStor
         return null;
     }
 
-    private static string? Hash(string path)
+    internal static string? Hash(string path)
     {
         try { using var s = File.OpenRead(path); return Convert.ToHexString(SHA256.HashData(s)); }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException) { return null; }
@@ -214,6 +216,11 @@ public sealed class FindDuplicatesTool(IReadOnlyList<string> roots, OrganizeStor
     {
         string text;
         try { text = DocumentReader.ReadText(path); } catch (Exception) { return null; }
+        return ShinglesOf(text);
+    }
+
+    internal static HashSet<string>? ShinglesOf(string text)
+    {
         var words = text.ToLowerInvariant().Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
         if (words.Length < 3) return null;
         var set = new HashSet<string>(StringComparer.Ordinal);

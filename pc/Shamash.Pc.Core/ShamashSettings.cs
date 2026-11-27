@@ -15,10 +15,14 @@ public sealed record ShamashSettings(
     string ClaudeModel)
 {
     public const string DefaultVoiceId = "JBFqnCBsd6RMkjVDRZzb";
+    public const int DefaultMaxOrganizeFiles = 3000;
     public const string DefaultClaudeModel = "claude-opus-5-5";
 
     /// <summary>Folders the document tools may search and read. Default on Windows: Documents and Desktop.</summary>
     public IReadOnlyList<string> DocumentRoots { get; init; } = [];
+
+    /// <summary>Folders with more files than this are refused by find_duplicates and the sort_folder tools. Env SHAMASH_MAX_ORGANIZE_FILES, config key maxOrganizeFiles.</summary>
+    public int MaxOrganizeFiles { get; init; } = DefaultMaxOrganizeFiles;
 
     /// <summary>Model for translate_document; null means the chat model. Env SHAMASH_TRANSLATE_MODEL, config key translateModel.</summary>
     public string? TranslateModel { get; init; }
@@ -67,6 +71,7 @@ public sealed record ShamashSettings(
             if (!string.IsNullOrWhiteSpace(v)) return v.Trim();
             if (file is { } f && f.TryGetProperty(fileKey, out var p) && p.ValueKind == JsonValueKind.String
                 && !string.IsNullOrWhiteSpace(p.GetString())) return p.GetString()!.Trim();
+            if (file is { } g && g.TryGetProperty(fileKey, out var q) && q.ValueKind == JsonValueKind.Number) return q.GetRawText();
             return null;
         }
 
@@ -79,6 +84,7 @@ public sealed record ShamashSettings(
         {
             DocumentRoots = PickRoots(getEnv("SHAMASH_DOCUMENT_ROOTS"), file),
             TranslateModel = Pick("SHAMASH_TRANSLATE_MODEL", "translateModel"),
+            MaxOrganizeFiles = int.TryParse(Pick("SHAMASH_MAX_ORGANIZE_FILES", "maxOrganizeFiles"), out var mo) && mo > 0 ? mo : DefaultMaxOrganizeFiles,
             AllowTextTurns = PickBool(getEnv("SHAMASH_ALLOW_TEXT_TURNS"), file, "allowTextTurns"),
         };
         doc?.Dispose();

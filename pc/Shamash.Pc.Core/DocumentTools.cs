@@ -136,6 +136,16 @@ public static class PathGuard
     }
 }
 
+/// <summary>Files no tool should list, search, group or move: Word lock files and shortcuts.</summary>
+public static class FileSkip
+{
+    public static bool IsIgnored(string pathOrName)
+    {
+        var name = Path.GetFileName(pathOrName);
+        return name.StartsWith("~$", StringComparison.Ordinal) || Path.GetExtension(name).Equals(".lnk", StringComparison.OrdinalIgnoreCase);
+    }
+}
+
 public static class ToolText
 {
     public static string Truncate(string text, int maxChars)
@@ -355,7 +365,7 @@ public sealed class SearchDocumentsTool(IReadOnlyList<string> roots, IDocumentIn
         var indexOk = false;
         if (_index is not null)
         {
-            try { hits = [.. _index.Search(roots, query, words, kind, max, ct)]; indexOk = true; }
+            try { hits = [.. _index.Search(roots, query, words, kind, max, ct).Where(h => !FileSkip.IsIgnored(h.FullPath))]; indexOk = true; }
             catch (OperationCanceledException) { throw; }
             catch (Exception e) { note = $"index unavailable ({e.GetType().Name})"; }
         }
@@ -383,6 +393,7 @@ public sealed class SearchDocumentsTool(IReadOnlyList<string> roots, IDocumentIn
             hits = Walk(words, Extensions(kind) is { } ke ? new HashSet<string>(ke) : null, max, ct, out complete);
             note = (note ?? (indexOk ? "index returned nothing" : null)) + "; slow folder walk" + (complete ? "" : ", stopped at its limit so it may be incomplete");
         }
+        hits = Rank(hits);
         var method = hits.Select(h => h.Method).Distinct().Order().ToList();
         var methodText = method.Count == 0 ? "walk" : string.Join("+", method.OrderByDescending(m => m == "index"));
         if (hits.Count == 0) return $"no documents found (method: {methodText}{(note is null ? "" : ", " + note)})";
@@ -402,6 +413,20 @@ public sealed class SearchDocumentsTool(IReadOnlyList<string> roots, IDocumentIn
         return sb.ToString().TrimEnd('\n');
     }
 
+    /// <summary>Index hits before walk hits; within a 30-day window .docx first, then other text formats, then .doc/.rtf/.pdf; newest first inside each step. Stable.</summary>
+    public static List<DocumentHit> Rank(IEnumerable<DocumentHit> hits) =>
+        hits.OrderBy(h => h.Method == "index" ? 0 : 1)
+            .ThenByDescending(h => (int)(h.Modified.Date - DateTime.MinValue).TotalDays / 30)
+            .ThenBy(h => FormatPriority(h.FullPath))
+            .ThenByDescending(h => h.Modified).ToList();
+
+    private static int FormatPriority(string path) => Path.GetExtension(path).ToLowerInvariant() switch
+    {
+        ".docx" => 0,
+        ".doc" or ".rtf" or ".pdf" => 2,
+        _ => 1,
+    };
+
     private List<DocumentHit> Walk(IReadOnlyList<string> words, IReadOnlySet<string>? exts, int max, CancellationToken ct, out bool complete)
     {
         var sw = Stopwatch.StartNew();
@@ -415,7 +440,7 @@ public sealed class SearchDocumentsTool(IReadOnlyList<string> roots, IDocumentIn
             {
                 ct.ThrowIfCancellationRequested();
                 var name = Path.GetFileName(file);
-                if (name.StartsWith("~$", StringComparison.Ordinal)) continue;
+                if (FileSkip.IsIgnored(name)) continue;
                 var ext = Path.GetExtension(file);
                 if (exts is not null && !exts.Contains(ext, StringComparer.OrdinalIgnoreCase)) continue;
                 if (++seen > WalkMaxFiles || sw.Elapsed > WalkMaxTime) { complete = false; goto done; }

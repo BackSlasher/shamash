@@ -146,7 +146,8 @@ public sealed class TurnPipeline(ISpeechToText stt, IReplyModel llm, ITextToSpee
         new OpenFileTool(settings.DocumentRoots),
         new IsDocumentOpenTool(settings.DocumentRoots),
         new FocusDocumentTool(settings.DocumentRoots),
-        .. OrganizeStore.CreateTools(settings.DocumentRoots),
+        .. OrganizeStore.CreateTools(settings.DocumentRoots, null, settings.MaxOrganizeFiles),
+        .. SortStore.CreateTools(settings.DocumentRoots, settings.MaxOrganizeFiles),
         new TranslateDocumentTool(settings.DocumentRoots, new ClaudeTranslator(settings.AnthropicApiKey, settings.TranslateModel ?? settings.ClaudeModel)),
     ];
 
@@ -285,6 +286,7 @@ public sealed class ClaudeReplyModel(string? apiKey, string model, IReadOnlyList
         "אתה רץ על המחשב האישי שלו, שהוא מחשב Windows, ויש לך כלים לחפש ולקרוא את המסמכים שלו. תמיד חפש בכלי לפני שאתה אומר שקובץ קיים או שהוא לא קיים. כשמצאת קובץ, אמור באיזו תיקייה הוא נמצא, לפי שם התיקייה ולא הנתיב המלא. " +
         "אתה יכול גם לפתוח קובץ, להראות אותו בסייר הקבצים, לבדוק אם מסמך פתוח כרגע ולהעביר מסמך פתוח לקדמת המסך. אל תקריא מסמך שלם, סכם אותו במשפט אחד עד שלושה. " +
         "כשמבקשים לסדר תיקייה, קודם קרא ל-find_duplicates ואז תאר את התוכנית בשלושה משפטים לכל היותר (כמה עותקים של כמה מסמכים ולאן הם יועברו) ושאל אם לבצע. קרא ל-apply_plan רק אחרי שהוא אמר כן בבירור בתור הבא. לעולם אל תמחק קבצים, רק הזז, ואמור שאפשר לבטל. " +
+        "סידור תיקייה מבולגנת נעשה קובץ אחד בכל פעם: קרא ל-sort_folder_start, ואז לכל קובץ קרא ל-sort_folder_next, תאר אותו במשפט אחד (מה זה, לפי הקטע שחזר) והצע יעד אחד בלבד, בצורת שאלה, לפי הראיות שחזרו: אם יש עותק זהה בתיקייה אחרת הצע להעביר את זה לכפולים; אחרת אם יש גרסה דומה בתיקייה אחרת הצע את אותה תיקייה; אחרת התיקייה עם התוכן הדומה ביותר; ואם שום דבר לא מתאים, תיקייה חדשה. אם הוא אמר כן קרא ל-sort_folder_move, אם אמר לא או דלג קרא ל-sort_folder_skip, ואם אמר תחזיר קרא ל-undo_last_move. אחרי כל חמישה קבצים אמור כמה נשארו ושאל אם להמשיך, וכשהוא אומר שמספיק, עצור ואמור שאפשר להמשיך בפעם אחרת. " +
         "אתה יכול לתרגם מסמך לאנגלית או לעברית; התוצאה נשמרת כקובץ חדש ליד המקור, ואחרי התרגום אמור באיזו תיקייה הקובץ נמצא והצע לפתוח אותו. אם ביקשו ממך משהו שאף כלי עדיין לא יודע לעשות, כמו שליחת מייל, אמור את זה בקצרה בעברית.";
 
     public const int MaxTokens = 1024;
