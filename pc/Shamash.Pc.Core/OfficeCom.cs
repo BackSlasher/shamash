@@ -36,6 +36,30 @@ public static class OfficeCom
         _ => $"error: {e.GetType().Name}: {FirstLine(e.Message)}",
     };
 
+    /// <summary>Dialogs of Word, Excel and Outlook on screen: the given probe, else the Win32 one (none off Windows).</summary>
+    public static IReadOnlyList<DialogInfo> ProbeDialogs(Func<IReadOnlyList<DialogInfo>>? probe = null)
+    {
+        if (probe is not null) return probe();
+        if (!OperatingSystem.IsWindows()) return [];
+#pragma warning disable CA1416
+        return DialogProbe.Enumerate();
+#pragma warning restore CA1416
+    }
+
+    /// <summary>The error with the Office dialog(s) now on screen appended, so the model can say what to press. A failing probe leaves the error as it was.</summary>
+    public static string AppendDialog(string error, Func<IReadOnlyList<DialogInfo>>? probe = null)
+    {
+        try
+        {
+            var text = DialogText.Format(ProbeDialogs(probe));
+            return text.Length == 0 ? error : $"{error}; {text}";
+        }
+        catch (Exception e) when (e is not OperationCanceledException) { return error; }
+    }
+
+    /// <summary><see cref="Describe"/> plus the dialog report.</summary>
+    public static string DescribeWithDialogs(Exception e, Func<IReadOnlyList<DialogInfo>>? probe = null) => AppendDialog(Describe(e), probe);
+
     private static string FirstLine(string s) => s.Split('\n')[0].Trim();
 
     /// <summary>Runs a Windows-only COM action behind the guard and the timeout; every failure becomes "error: ...".</summary>
@@ -43,7 +67,7 @@ public static class OfficeCom
     {
         if (!OperatingSystem.IsWindows()) return WindowsOnly;
         try { return RunSta(action); }
-        catch (Exception e) when (e is not OperationCanceledException) { return Describe(e); }
+        catch (Exception e) when (e is not OperationCanceledException) { return DescribeWithDialogs(e); }
     }
 }
 
@@ -88,22 +112,35 @@ public static class WordAutomation
     {
         dynamic? app = ComInterop.GetActive(ProgId);
         var created = false;
-        dynamic? docs = null, doc = null, content = null;
+        dynamic? docs = null, doc = null, content = null, options = null;
         var openedHere = false;
+        var restoreAlerts = false;
+        int previousAlerts = 0;
         try
         {
             if (app is null)
             {
+                // Our own instance: free to switch off everything that could ask a question.
                 app = ComInterop.Create(ProgId);
                 created = true;
                 app.Visible = false;
+                app.DisplayAlerts = 0;                // wdAlertsNone
+                app.AutomationSecurity = 3;           // msoAutomationSecurityForceDisable: no macro prompts
+                options = app.Options;
+                options.ConfirmConversions = false;
+            }
+            else
+            {
+                // The user's Word: change no persistent option, only silence alerts around our call.
+                previousAlerts = (int)app.DisplayAlerts;
                 app.DisplayAlerts = 0;
+                restoreAlerts = true;
             }
             docs = app.Documents;
             doc = FindOpen(docs, path);
             if (doc is null)
             {
-                doc = docs.Open(FileName: path, ConfirmConversions: false, ReadOnly: true, AddToRecentFiles: false, NoEncodingDialog: true, Visible: false);
+                doc = docs.Open(FileName: path, ConfirmConversions: false, ReadOnly: true, AddToRecentFiles: false, OpenAndRepair: false, NoEncodingDialog: true, Visible: false);
                 openedHere = true;
             }
             content = doc.Content;
@@ -113,21 +150,21 @@ public static class WordAutomation
         finally
         {
             try { if (openedHere && doc is not null) doc.Close(SaveChanges: 0); } catch (Exception) { }
+            try { if (restoreAlerts && app is not null) app.DisplayAlerts = previousAlerts; } catch (Exception) { }
             try { if (created && app is not null) app.Quit(SaveChanges: 0); } catch (Exception) { }
-            ComInterop.Release(content, doc, docs, app);
+            ComInterop.Release(content, options, doc, docs, app);
         }
     }
 
     /// <summary>The open Document with this full path (caller releases it) or null.</summary>
     private static object? FindOpen(dynamic docs, string path)
     {
-        var full = Path.GetFullPath(path);
         int count = docs.Count;
         for (var i = 1; i <= count; i++)
         {
             dynamic d = docs.Item(i);
             string name = d.FullName;
-            if (string.Equals(name, full, StringComparison.OrdinalIgnoreCase)) return d;
+            if (DocumentIdentity.SamePath(name, path)) return d;
             ComInterop.Release(d);
         }
         return null;
@@ -157,6 +194,103 @@ public static class WordAutomation
             }
         }
         finally { ComInterop.Release(doc, docs, app); }
+    }
+}
+
+/// <summary>The documents open in running Word and Excel instances (never starts either).</summary>
+[SupportedOSPlatform("windows")]
+public sealed class OfficeOpenDocuments : IOpenDocuments
+{
+    private static readonly (string ProgId, string App, string Collection)[] Apps =
+        [("Word.Application", "Word", "Documents"), ("Excel.Application", "Excel", "Workbooks")];
+
+    public IReadOnlyList<OpenDocument> List()
+    {
+        try { return OfficeCom.RunSta(Collect); }
+        catch (Exception e) when (e is not OperationCanceledException) { return []; }
+    }
+
+    private static List<OpenDocument> Collect()
+    {
+        var result = new List<OpenDocument>();
+        foreach (var (progId, appName, collection) in Apps)
+        {
+            dynamic? app = null, items = null;
+            try
+            {
+                app = ComInterop.GetActive(progId);
+                if (app is null) continue;
+                items = collection == "Documents" ? app.Documents : app.Workbooks;
+                int count = items.Count;
+                for (var i = 1; i <= count; i++)
+                {
+                    dynamic? item = null;
+                    try
+                    {
+                        item = items.Item(i);
+                        string full = item.FullName;
+                        bool saved = item.Saved;
+                        result.Add(new OpenDocument(full, appName, saved, Hwnd(app, item, appName)));
+                    }
+                    catch (Exception e) when (e is COMException or Microsoft.CSharp.RuntimeBinder.RuntimeBinderException) { }
+                    finally { ComInterop.Release(item); }
+                }
+            }
+            catch (Exception e) when (e is COMException or Microsoft.CSharp.RuntimeBinder.RuntimeBinderException) { }
+            finally { ComInterop.Release(items, app); }
+        }
+        return result;
+    }
+
+    /// <summary>Word: the document's own window (a hidden document has none); Excel: the application window.</summary>
+    private static nint? Hwnd(dynamic app, dynamic item, string appName)
+    {
+        try
+        {
+            if (appName == "Word")
+            {
+                dynamic w = item.ActiveWindow;
+                try { return (nint)(int)w.Hwnd; } finally { ComInterop.Release(w); }
+            }
+            return (nint)(int)app.Hwnd;
+        }
+        catch (Exception e) when (e is COMException or Microsoft.CSharp.RuntimeBinder.RuntimeBinderException) { return null; }
+    }
+
+    public nint? Activate(OpenDocument doc)
+    {
+        try { return OfficeCom.RunSta(() => ActivateCore(doc)); }
+        catch (Exception e) when (e is not OperationCanceledException) { return null; }
+    }
+
+    private static nint? ActivateCore(OpenDocument doc)
+    {
+        var (progId, appName, collection) = Apps.First(a => a.App == doc.AppName);
+        dynamic? app = ComInterop.GetActive(progId), items = null, item = null;
+        if (app is null) return null;
+        try
+        {
+            items = collection == "Documents" ? app.Documents : app.Workbooks;
+            int count = items.Count;
+            for (var i = 1; i <= count && item is null; i++)
+            {
+                dynamic d = items.Item(i);
+                string name = d.FullName;
+                if (DocumentIdentity.SamePath(name, doc.FullPath)) item = d; else ComInterop.Release(d);
+            }
+            if (item is null) return null;
+            item.Activate();
+            try { app.Visible = true; } catch (Exception e) when (e is COMException or Microsoft.CSharp.RuntimeBinder.RuntimeBinderException) { }
+            try { app.Activate(); } catch (Exception e) when (e is COMException or Microsoft.CSharp.RuntimeBinder.RuntimeBinderException) { }   // Word has it; Excel may not
+            if (appName == "Word")
+            {
+                dynamic w = app.ActiveWindow;
+                try { return (nint)(int)w.Hwnd; } finally { ComInterop.Release(w); }
+            }
+            return (nint)(int)app.Hwnd;
+        }
+        catch (Exception e) when (e is COMException or Microsoft.CSharp.RuntimeBinder.RuntimeBinderException) { return null; }
+        finally { ComInterop.Release(item, items, app); }
     }
 }
 
@@ -199,7 +333,7 @@ public sealed class CloseDocumentTool(IReadOnlyList<string> roots) : IAgentTool
         {
             // Word missing or hung: say so only when no window fallback applies.
             var w = FindWindow(full);
-            if (w is null) return OfficeCom.Describe(e);
+            if (w is null) return OfficeCom.DescribeWithDialogs(e);
         }
         if (viaWord is not null) return viaWord;
         var win = FindWindow(full);

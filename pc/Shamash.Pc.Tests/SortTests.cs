@@ -241,7 +241,8 @@ public class SortTests
         Assert.Equal("real.txt", Line(s.Next(J("""{"session_id":"s1"}""")), "name"));
         var find = OrganizeStore.CreateTools([e.Desktop], e.Organize)[0];
         Assert.Contains("scanned: 1 files", find.RunAsync(J(Obj(("folder", e.Salad))), default).GetAwaiter().GetResult());
-        var search = new SearchDocumentsTool([e.Desktop], new NoIndex());
+        string[] names = ["real.txt", "~$real.docx", "link-keyword.lnk"];
+        var search = new SearchDocumentsTool([e.Desktop], new ListIndex(names.Select(n => new DocumentHit(n, Path.Combine(e.Desktop, n), T0, 10)).ToList()));
         var sr = search.RunAsync(J("""{"query":"keyword"}"""), default).GetAwaiter().GetResult();
         Assert.Contains("real.txt", sr);
         Assert.DoesNotContain("~$", sr);
@@ -353,8 +354,8 @@ public class SortTests
         Assert.Contains("sort_folder_start", ClaudeReplyModel.SystemPrompt);
     }
 
-    private sealed class NoIndex : IDocumentIndex
+    private sealed class ListIndex(IReadOnlyList<DocumentHit> hits) : IDocumentIndex
     {
-        public IReadOnlyList<DocumentHit> Search(IReadOnlyList<string> roots, string query, IReadOnlyList<string> words, string kind, int max, CancellationToken ct) => throw new InvalidOperationException();
+        public IReadOnlyList<DocumentHit> Search(IReadOnlyList<string> roots, string query, IReadOnlyList<string> words, string kind, int max, CancellationToken ct) => hits;
     }
 }

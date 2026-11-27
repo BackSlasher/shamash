@@ -51,7 +51,7 @@ Spoken result: "מצאתי את X בתיקייה Y ופתחתי אותו" or "ל
 Confirmation needed: none.
 Seed data for the VM: ~50 .docx/.pdf in nested folders, a few on the same subject, Hebrew and English, some duplicates with different names.
 Done when: the right file opens on screen.
-Owner notes (2026-11-27): agreed. Tooling = a document text reader plus the Windows Search index (OS-maintained, never stale; query via the Search.CollatorDSO OLE DB provider), with a slow folder walk as fallback for unindexed locations. Claude keeps no index of its own. Verify on his PC: PDF content indexing and which folders are indexed.
+Owner notes (2026-11-27): agreed. Tooling = a document text reader plus the Windows Search index (OS-maintained, never stale; query via the Search.CollatorDSO OLE DB provider), index only (owner decision 2026-11-27: no walk or other fallback; if the index is unavailable the tool returns a hard error and Shamash tells the user to try again in a minute). Claude keeps no index of its own. Verify on his PC: PDF content indexing and which folders are indexed.
 
 ### Translate a document                                status: tested-vm
 Ask: "תעביר את המאמר הזה לאנגלית"
@@ -177,7 +177,7 @@ Owner notes (2026-11-28): the Pixel 7 Pro's USB-C port grips weakly and cables s
 These are facts about the target environment; none of the files themselves are in this repo or in the public VM snapshots.
 
 - Source: `~/projects/saba` holds rclone listings of three Google Drive roots (D:, Desktop, Documents) taken 2026-11-12, a partial mirror, `inventory/index.csv` (6,892 documents with LLM category, summary and canonical path), `dedup.json`, and an unapplied consolidation plan for D: (round one: dedup into a Drive quarantine folder; round two: a new folder structure). Its Python tools (python-docx, olefile, striprtf, pypdf, LibreOffice for .doc) are reusable for text extraction.
-- Scale: the current `search_documents` walk cap (2000 files / 10 s) and `find_duplicates` are sized for the live Desktop and Documents, not for D:. Default document roots should be Desktop and Documents; the D: archive should be reachable only through the Windows Search index or the saba `index.csv` canonical paths, never walked, and `find_duplicates` must refuse roots above a file-count threshold.
+- Scale: `find_duplicates` is sized for the live Desktop and Documents, not for D:. Default document roots should be Desktop and Documents; the D: archive should be reachable only through the Windows Search index or the saba `index.csv` canonical paths, never walked by search, and `find_duplicates` must refuse roots above a file-count threshold.
 - Formats: `read_document` cannot read .doc or .rtf today, which are 11,770 of his files. Needed: a .doc reader (Word COM on his PC since Office 2016 is present, with a library fallback) and an .rtf reader; skip `~$` lock files everywhere; PDFs without a text layer need OCR (FineReader is installed) or are reported as "scan, no text".
 - Dedup overlap: the saba plan already defines canonical paths and a quarantine policy for D:; Shamash's organise tools must not run on D: until that plan is applied, and should reuse its canonical ordering (live Desktop > Data/Documents/<topic> > Data/Desktop > Copy/OLD/salad paths) when it does.
 - Shortcuts: Desktop .lnk files point into D:\Old D; moving targets breaks them (the saba plan tracks this in shortcuts.md).

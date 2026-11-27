@@ -19,7 +19,7 @@ public static class DocumentReader
     public const int MaxSheetRows = 200;
     public static readonly string[] Supported = [".docx", ".pdf", ".xlsx", ".txt", ".md", ".csv"];
 
-    /// <summary>Formats read_document handles: Supported plus the legacy .doc and .rtf (Word COM first on Windows, then the managed extractor). Search walks and sorting evidence stay on Supported.</summary>
+    /// <summary>Formats read_document handles: Supported plus the legacy .doc and .rtf (Word COM first on Windows, then the managed extractor). Sorting evidence stay on Supported.</summary>
     public static bool IsReadable(string path) =>
         IsSupported(path) || Path.GetExtension(path).ToLowerInvariant() is ".doc" or ".rtf";
 
@@ -243,7 +243,7 @@ public sealed record DocumentHit(string Name, string FullPath, DateTime Modified
 
 public interface IDocumentIndex
 {
-    /// <summary>Hits newest first; may throw when the index is unavailable (the caller falls back to a walk).</summary>
+    /// <summary>Hits newest first; may throw when the index is unavailable (the tool then reports a hard error, it never searches another way).</summary>
     IReadOnlyList<DocumentHit> Search(IReadOnlyList<string> roots, string query, IReadOnlyList<string> words, string kind, int max, CancellationToken ct);
 }
 
@@ -298,51 +298,12 @@ public sealed class WindowsSearchIndex : IDocumentIndex
     private static string CleanWord(string w) => new(w.Where(c => c is not ('"' or '%' or '_' or '[' or ']' or '*')).ToArray());
 }
 
-/// <summary>Which extensions the Windows Search index has no content filter for (no PersistentHandler), so only names are indexed.</summary>
-public sealed class IndexCoverage(Func<string, bool>? hasHandler = null)
+public sealed class SearchDocumentsTool(IReadOnlyList<string> roots, IDocumentIndex? index = null) : IAgentTool
 {
-    public static readonly string[] Checked = [".docx", ".xlsx", ".txt", ".pdf"];
-
-    private readonly Lazy<HashSet<string>> _nameOnly = new(() => Compute(hasHandler ?? RegistryHasHandler));
-
-    /// <summary>Extensions (with dot) whose content the index does not cover. Computed once per process.</summary>
-    public IReadOnlySet<string> NameOnly => _nameOnly.Value;
-
-    private static HashSet<string> Compute(Func<string, bool> has)
-    {
-        var set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var e in Checked)
-        {
-            bool ok;
-            try { ok = has(e); } catch (Exception) { ok = true; } // unknown: trust the index
-            if (!ok) set.Add(e);
-        }
-        return set;
-    }
-
-    private static bool RegistryHasHandler(string ext)
-    {
-        if (!OperatingSystem.IsWindows()) return true;
-        return Check(ext);
-
-        [SupportedOSPlatform("windows")]
-        static bool Check(string ext)
-        {
-            using var key = Microsoft.Win32.Registry.ClassesRoot.OpenSubKey(ext + "\\PersistentHandler");
-            return key?.GetValue(null) is string v && !string.IsNullOrWhiteSpace(v);
-        }
-    }
-}
-
-public sealed class SearchDocumentsTool(IReadOnlyList<string> roots, IDocumentIndex? index = null, IndexCoverage? coverage = null) : IAgentTool
-{
-    public const int WalkMaxFiles = 2000;
-    public static readonly TimeSpan WalkMaxTime = TimeSpan.FromSeconds(10);
     public const long ContentMaxBytes = 5L * 1024 * 1024;
     public const int DefaultMax = 10;
 
     private readonly IDocumentIndex? _index = index ?? DefaultIndex();
-    private readonly IndexCoverage _coverage = coverage ?? new IndexCoverage();
     private static readonly char[] WordSeparators = [' ', '\t', '\r', '\n', '\'', '\u2019', '\u05F3', '\u05F4', '"', '-', '\u05BE', '\u2010', '\u2011', '\u2013'];
 
     /// <summary>Splits a query into search words: whitespace, apostrophes, geresh, gershayim, quotes and hyphens all separate words.</summary>
@@ -353,10 +314,11 @@ public sealed class SearchDocumentsTool(IReadOnlyList<string> roots, IDocumentIn
 
     public string Name => "search_documents";
     public string Description =>
-        "Searches the user's document folders by file name and by content. query is a few keywords (Hebrew or English), not a sentence. " +
+        "Searches the user's document folders through the Windows Search index, by file name and by content. query is a few keywords (Hebrew or English), not a sentence. " +
         "Give Hebrew words without the prefix letters ה ו ב ל מ ש כ when possible (ירושלים, not בירושלים). " +
         "If a search returns nothing, retry once with a shorter or alternative form of the words before concluding the file does not exist. " +
-        "Returns numbered lines: name | folder | modified date | size KB | index or walk, newest first.";
+        "Returns numbered lines: name | folder | modified date | size KB, newest first. " +
+        "If it returns an error saying the search index is not available, tell the user so plainly and ask them to try again in a minute; do not guess file names.";
     public string InputSchema => """
         {"type":"object","properties":{"query":{"type":"string","description":"Keywords to look for in names and content"},"kind":{"type":"string","enum":["any","docx","pdf","xlsx","txt"],"description":"File type filter, default any"},"max":{"type":"integer","description":"Number of results, 1 to 20, default 10"}},"required":["query"]}
         """;
@@ -383,46 +345,16 @@ public sealed class SearchDocumentsTool(IReadOnlyList<string> roots, IDocumentIn
         var max = Math.Clamp(ToolText.GetInt(input, "max") ?? DefaultMax, 1, 20);
         if (roots.Count == 0) return "error: no document folders configured";
 
-        List<DocumentHit> hits = [];
-        string? note = null;
-        var indexOk = false;
-        if (_index is not null)
-        {
-            try { hits = [.. _index.Search(roots, query, words, kind, max, ct).Where(h => !FileSkip.IsIgnored(h.FullPath))]; indexOk = true; }
-            catch (OperationCanceledException) { throw; }
-            catch (Exception e) { note = $"index unavailable ({e.GetType().Name})"; }
-        }
-        else note = "no index on this system";
-
-        var complete = true;
-        if (indexOk && hits.Count > 0)
-        {
-            // The index answered; add content hits for the types it only knows by name. .txt without a BOM
-            // is not detectable, so .txt joins the walk when the index found no .txt for these words.
-            var extra = new HashSet<string>(_coverage.NameOnly, StringComparer.OrdinalIgnoreCase);
-            if (!hits.Any(h => Path.GetExtension(h.FullPath).Equals(".txt", StringComparison.OrdinalIgnoreCase))) extra.Add(".txt");
-            var kindExts = Extensions(kind);
-            if (kindExts is not null) extra.IntersectWith(kindExts);
-            if (extra.Count > 0)
-            {
-                var seenPaths = new HashSet<string>(hits.Select(h => h.FullPath), StringComparer.OrdinalIgnoreCase);
-                var walked = Walk(words, extra, max, ct, out complete).Where(h => seenPaths.Add(h.FullPath));
-                hits = [.. hits, .. walked];
-                note = "index plus content walk of " + string.Join(" ", extra.Order()) + (complete ? "" : ", walk stopped at its limit");
-            }
-        }
-        else
-        {
-            hits = Walk(words, Extensions(kind) is { } ke ? new HashSet<string>(ke) : null, max, ct, out complete);
-            note = (note ?? (indexOk ? "index returned nothing" : null)) + "; slow folder walk" + (complete ? "" : ", stopped at its limit so it may be incomplete");
-        }
+        const string Unavailable = "error: the Windows Search index is not available right now. Tell the user plainly that document search is unavailable and ask them to try again in a minute. Do not guess file names.";
+        if (_index is null) return Unavailable;
+        List<DocumentHit> hits;
+        try { hits = [.. _index.Search(roots, query, words, kind, max, ct).Where(h => !FileSkip.IsIgnored(h.FullPath))]; }
+        catch (OperationCanceledException) { throw; }
+        catch (Exception) { return Unavailable; }
         hits = Rank(hits);
-        var method = hits.Select(h => h.Method).Distinct().Order().ToList();
-        var methodText = method.Count == 0 ? "walk" : string.Join("+", method.OrderByDescending(m => m == "index"));
-        if (hits.Count == 0) return $"no documents found (method: {methodText}{(note is null ? "" : ", " + note)})";
+        if (hits.Count == 0) return "no documents found";
 
         var sb = new StringBuilder();
-        sb.Append($"method: {methodText}").Append(note is null ? "" : $" ({note})").Append('\n');
         var n = 0;
         foreach (var h in hits.Take(max))
         {
@@ -431,15 +363,14 @@ public sealed class SearchDocumentsTool(IReadOnlyList<string> roots, IDocumentIn
             var folder = root is null ? Path.GetFileName(dir) : Path.GetRelativePath(root, dir);
             sb.Append(++n).Append(". ").Append(h.Name).Append(" | ").Append(folder).Append(" | ")
               .Append(h.Modified.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)).Append(" | ")
-              .Append(((h.Size + 1023) / 1024).ToString(CultureInfo.InvariantCulture)).Append(" KB | ").Append(h.Method).Append('\n');
+              .Append(((h.Size + 1023) / 1024).ToString(CultureInfo.InvariantCulture)).Append(" KB\n");
         }
         return sb.ToString().TrimEnd('\n');
     }
 
-    /// <summary>Index hits before walk hits; within a 30-day window .docx first, then other text formats, then .doc/.rtf/.pdf; newest first inside each step. Stable.</summary>
+    /// <summary>Within a 30-day window .docx first, then other text formats, then .doc/.rtf/.pdf; newest first inside each step. Stable.</summary>
     public static List<DocumentHit> Rank(IEnumerable<DocumentHit> hits) =>
-        hits.OrderBy(h => h.Method == "index" ? 0 : 1)
-            .ThenByDescending(h => (int)(h.Modified.Date - DateTime.MinValue).TotalDays / 30)
+        hits.OrderByDescending(h => (int)(h.Modified.Date - DateTime.MinValue).TotalDays / 30)
             .ThenBy(h => FormatPriority(h.FullPath))
             .ThenByDescending(h => h.Modified).ToList();
 
@@ -449,40 +380,4 @@ public sealed class SearchDocumentsTool(IReadOnlyList<string> roots, IDocumentIn
         ".doc" or ".rtf" or ".pdf" => 2,
         _ => 1,
     };
-
-    private List<DocumentHit> Walk(IReadOnlyList<string> words, IReadOnlySet<string>? exts, int max, CancellationToken ct, out bool complete)
-    {
-        var sw = Stopwatch.StartNew();
-        var seen = 0;
-        complete = true;
-        var hits = new List<DocumentHit>();
-        var opts = new EnumerationOptions { RecurseSubdirectories = true, IgnoreInaccessible = true, AttributesToSkip = FileAttributes.System };
-        foreach (var root in roots.Where(Directory.Exists))
-        {
-            foreach (var file in Directory.EnumerateFiles(root, "*", opts))
-            {
-                ct.ThrowIfCancellationRequested();
-                var name = Path.GetFileName(file);
-                if (FileSkip.IsIgnored(name)) continue;
-                var ext = Path.GetExtension(file);
-                if (exts is not null && !exts.Contains(ext, StringComparer.OrdinalIgnoreCase)) continue;
-                if (++seen > WalkMaxFiles || sw.Elapsed > WalkMaxTime) { complete = false; goto done; }
-                FileInfo fi;
-                try { fi = new FileInfo(file); } catch (Exception) { continue; }
-                var match = words.Any(w => name.Contains(w, StringComparison.OrdinalIgnoreCase));
-                if (!match && fi.Length < ContentMaxBytes && DocumentReader.IsSupported(file))
-                {
-                    try
-                    {
-                        var text = DocumentReader.ReadText(file);
-                        match = words.All(w => text.Contains(w, StringComparison.OrdinalIgnoreCase));
-                    }
-                    catch (Exception e) when (e is not OperationCanceledException) { /* unreadable file: not a match */ }
-                }
-                if (match) hits.Add(new DocumentHit(name, file, fi.LastWriteTime, fi.Length, "walk"));
-            }
-        }
-        done:
-        return hits.OrderByDescending(h => h.Modified).Take(max).ToList();
-    }
 }

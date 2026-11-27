@@ -172,6 +172,18 @@ public class OfficeTests
     }
 
     [Fact]
+    public void OfficeCom_AppendsDialogToError_ViaProbe()
+    {
+        var dlg = new DialogInfo("Word", "Microsoft Word", ["Word found unreadable content."], ["Yes", "No"]);
+        var e = new TimeoutException("Office did not answer within 25 s (a dialog may be waiting on screen)");
+        var s = OfficeCom.DescribeWithDialogs(e, () => [dlg]);
+        Assert.StartsWith("error: Office did not answer", s);
+        Assert.EndsWith("; Word is showing a dialog \"Microsoft Word\": Word found unreadable content. [buttons: Yes, No]", s);
+        Assert.Equal("error: x", OfficeCom.AppendDialog("error: x", () => []));
+        Assert.Equal("error: x", OfficeCom.AppendDialog("error: x", () => throw new InvalidOperationException("probe broke")));
+    }
+
+    [Fact]
     public async Task OutlookTools_WindowsOnlyElsewhere_AndGuards()
     {
         var tools = OutlookTools.Create().ToDictionary(t => t.Name);

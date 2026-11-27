@@ -223,36 +223,46 @@ public class DocumentToolTests
     }
 
     [Fact]
-    public async Task Search_WalkFallback_FindsHebrewInNameTxtAndDocx()
+    public async Task Search_IndexThrows_IsHardError_AndDoesNotWalk()
     {
         using var d = new TempDir();
-        File.WriteAllText(d.File("notes/a.txt"), "המאמר על ירושלים בתקופה העות'מאנית");
-        MakeDocx(d.File("papers/b.docx"), "ירושלים העתיקה");
-        File.WriteAllText(d.File("c-ירושלים.txt"), "x");
-        File.WriteAllText(d.File("other.txt"), "nothing here");
+        File.WriteAllText(d.File("c-ירושלים.txt"), "ירושלים");
         var tool = new SearchDocumentsTool([d.Path], new ThrowingIndex());
         var r = await tool.RunAsync(J("""{"query":"ירושלים"}"""), default);
-        Assert.Contains("method: walk", r);
-        Assert.Contains("a.txt | notes |", r);
-        Assert.Contains("b.docx | papers |", r);
-        Assert.Contains("c-ירושלים.txt | . |", r);
-        Assert.DoesNotContain("other.txt", r);
-        var onlyDocx = await tool.RunAsync(J("""{"query":"ירושלים","kind":"docx"}"""), default);
-        Assert.Contains("b.docx", onlyDocx);
-        Assert.DoesNotContain("a.txt", onlyDocx);
-        Assert.StartsWith("no documents found", await tool.RunAsync(J("""{"query":"zzzq"}"""), default));
+        Assert.StartsWith("error: ", r);
+        Assert.Contains("index", r);
+        Assert.Contains("try again in a minute", r);
+        Assert.DoesNotContain("c-ירושלים", r);
     }
 
     [Fact]
-    public async Task Search_UsesIndexWhenItAnswers()
+    public async Task Search_NoIndexOnThisSystem_IsHardError()
+    {
+        using var d = new TempDir();
+        File.WriteAllText(d.File("a.txt"), "x");
+        var tool = new SearchDocumentsTool([d.Path], null);
+        if (OperatingSystem.IsWindows()) return;
+        Assert.StartsWith("error: ", await tool.RunAsync(J("""{"query":"x"}"""), default));
+    }
+
+    [Fact]
+    public async Task Search_IndexEmpty_IsNoResults()
+    {
+        using var d = new TempDir();
+        File.WriteAllText(d.File("a.txt"), "ירושלים");
+        var tool = new SearchDocumentsTool([d.Path], new FakeIndex([]));
+        Assert.Equal("no documents found", await tool.RunAsync(J("""{"query":"ירושלים"}"""), default));
+    }
+
+    [Fact]
+    public async Task Search_IndexHits_AreFormattedLines()
     {
         using var d = new TempDir();
         var f = d.File("sub/x.docx");
         MakeDocx(f, "a");
         var tool = new SearchDocumentsTool([d.Path], new FakeIndex([new DocumentHit("x.docx", f, new DateTime(2026, 11, 20), 2048)]));
         var r = await tool.RunAsync(J("""{"query":"x"}"""), default);
-        Assert.StartsWith("method: index", r);
-        Assert.Contains("1. x.docx | sub | 2026-11-20 | 2 KB", r);
+        Assert.Equal("1. x.docx | sub | 2026-11-20 | 2 KB", r);
     }
 
     [Fact]
@@ -273,54 +283,6 @@ public class DocumentToolTests
         Assert.Equal(["צה", "ל", "תל", "אביב", "דו", "ח"], SearchDocumentsTool.Tokenize("צה\u05F3ל תל-אביב דו\u05BEח"));
         Assert.Equal(["מכתב", "לעירייה"], SearchDocumentsTool.Tokenize("  מכתב   \"לעירייה\"\u05F4 "));
         Assert.Empty(SearchDocumentsTool.Tokenize(" ' - "));
-    }
-
-    [Fact]
-    public void Coverage_NameOnlyExtensions_FromHandlerLookup()
-    {
-        var c = new IndexCoverage(e => e is ".txt" or ".pdf");
-        Assert.Equal(new[] { ".docx", ".xlsx" }, c.NameOnly.Order());
-        Assert.Empty(new IndexCoverage(_ => true).NameOnly);
-    }
-
-    [Fact]
-    public async Task Search_MergesIndexNameHitsWithContentWalk_IndexFirst()
-    {
-        using var d = new TempDir();
-        // index knows only names for docx: it returns the file whose NAME matches
-        var byName = d.File("a/ירושלים-notes.docx");
-        MakeDocx(byName, "unrelated");
-        // content of this docx matches only in the body: only the walk can find it
-        var byBody = d.File("b/article.docx");
-        MakeDocx(byBody, "ירושלים בתקופה העות'מאנית");
-        // a pdf the index covers (not name-only, not walked)
-        var pdf = d.File("c/other.pdf");
-        MakePdf(pdf, "Jerusalem");
-        File.WriteAllText(d.File("d/plain.txt"), "ירושלים", new UTF8Encoding(false)); // no BOM: index could miss it
-        var idx = new FakeIndex([new DocumentHit("ירושלים-notes.docx", byName, new DateTime(2026, 1, 1), 1024), new DocumentHit("other.pdf", pdf, new DateTime(2026, 1, 2), 1024)]);
-        var tool = new SearchDocumentsTool([d.Path], idx, new IndexCoverage(e => e is ".pdf"));
-        var r = await tool.RunAsync(J("""{"query":"ירושלים"}"""), default);
-        var lines = r.Split('\n');
-        Assert.StartsWith("method: index+walk", lines[0]);
-        Assert.Contains("| index", lines[1]);
-        Assert.Contains("| index", lines[2]);
-        Assert.Contains("article.docx | b |", r);
-        Assert.Contains("plain.txt | d |", r);
-        Assert.EndsWith("| walk", lines[^1]);
-        Assert.Equal(1, r.Split("ירושלים-notes.docx").Length - 1); // merged by path, no duplicate
-        Assert.DoesNotContain("other.pdf | c | 2026-01-02 | 1 KB | walk", r);
-    }
-
-    [Fact]
-    public async Task Search_IndexTxtHit_SkipsTxtWalk()
-    {
-        using var d = new TempDir();
-        var txt = d.File("t/a.txt");
-        File.WriteAllText(txt, "ירושלים", new UTF8Encoding(true));
-        var tool = new SearchDocumentsTool([d.Path], new FakeIndex([new DocumentHit("a.txt", txt, DateTime.Now, 10)]), new IndexCoverage(_ => true));
-        var r = await tool.RunAsync(J("""{"query":"ירושלים"}"""), default);
-        Assert.StartsWith("method: index", r);
-        Assert.DoesNotContain("walk", r.Split('\n')[1]);
     }
 
     [Fact]
