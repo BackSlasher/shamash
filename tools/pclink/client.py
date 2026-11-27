@@ -2,7 +2,8 @@
 """Plays the phone's role for one conversation turn (docs/link-protocol.md).
 
     client.py ws://host:8777/ input.wav [reply.wav] [--probe] [--fast]
-    client.py ws://host:8777/ [reply.wav] --text "<hebrew>"     (text turn, test aid, no WAV)
+    client.py ws://host:8777/ [reply.wav] --text "<hebrew>" [--no-tts]   (text turn, test aid, no WAV;
+                                                      --no-tts: PC skips speech synthesis, no reply WAV, exit 0)
     client.py ws://host:8777/ --tool <name> '<json input>'      (run one tool directly, test aid)
 
     client.py ws://host:8777/ --reset                             (clear the conversation history, test aid)
@@ -50,7 +51,7 @@ def load_pcm(path: str) -> bytes:
     return struct.pack(f"<{len(samples)}h", *samples)
 
 
-async def run(url: str, wav_in: str | None, wav_out: str | None, probe: bool, fast: bool, text: str | None = None) -> int:
+async def run(url: str, wav_in: str | None, wav_out: str | None, probe: bool, fast: bool, text: str | None = None, no_tts: bool = False) -> int:
     pcm = b"" if text is not None else load_pcm(wav_in)
     frame = RATE * 2 * FRAME_MS // 1000
     t0 = time.monotonic()
@@ -65,6 +66,8 @@ async def run(url: str, wav_in: str | None, wav_out: str | None, probe: bool, fa
         hello["mode"] = "probe" if probe else "conversation"
         if text is not None:
             hello["text"] = text  # needs allowTextTurns on the PC
+            if no_tts:
+                hello["noTts"] = True
         await ws.send(json.dumps(hello))
         log(f"sent hello {hello['mode']}, {len(pcm) / RATE / 2:.1f} s of audio")
 
@@ -106,7 +109,7 @@ async def run(url: str, wav_in: str | None, wav_out: str | None, probe: bool, fa
             w.setframerate(RATE)
             w.writeframes(bytes(reply))
         log(f"reply audio: {len(reply)} bytes = {len(reply) / RATE / 2:.2f} s -> {wav_out}")
-    elif not probe:
+    elif not probe and not no_tts:
         log(f"reply audio: {len(reply)} bytes")
     return rc
 
@@ -171,4 +174,4 @@ if __name__ == "__main__":
     if len(args) < 2:
         raise SystemExit(__doc__)
     sys.exit(asyncio.run(run(args[0], args[1], args[2] if len(args) > 2 else None,
-                             "--probe" in argv, "--fast" in argv, text)))
+                             "--probe" in argv, "--fast" in argv, text, "--no-tts" in argv)))

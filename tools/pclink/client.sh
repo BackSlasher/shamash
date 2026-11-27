@@ -6,6 +6,7 @@
 # Host paths for the WAVs are mounted; the output WAV lands next to the input.
 # --tool runs one tool directly (no model/STT/TTS), prints result or "error: ..."; exit 0 result, 2 error, 3 unknown tool.
 #   tools/pclink/client.sh ws://127.0.0.1:8777/ --reset      (clear the PC's conversation history; exit 0 reset_ok, 2 error)
+# --text ... --no-tts asks the PC to skip speech synthesis (no reply WAV).
 # --text is the test aid (PC needs allowTextTurns): no input WAV, hello carries the transcript.
 set -euo pipefail
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

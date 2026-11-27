@@ -4,8 +4,13 @@ Replays the owner's phone session of 2026-11-28 and the VM tests of 2026-11-27 a
 the real model, and asserts tool sequences and end state. Item 2 of the "Regression harness for Office tools" task.
 
 ```
-tools/winvm/scenarios/run.sh [--restore] [--install <Setup.exe>] [--expect-version <v>] [--only <name>] [--url ws://127.0.0.1:8777/]
+tools/winvm/scenarios/run.sh [--restore] [--install <Setup.exe>] [--expect-version <v>] [--only <name>] [--url ws://127.0.0.1:8777/] [--tts]
 ```
+
+Turns are sent with `--no-tts` (hello `"noTts": true`, see `docs/link-protocol.md`): the PC skips ElevenLabs synthesis, so the suite spends no
+TTS credit; assertions never look at audio. Pass `--tts` to `run.sh` (forwarded to `check.py`) to synthesise audio as in a real turn, for a
+manual listen. A turn whose JSON carries `error.stage == "tts"` prints a `WARNING` line and does not fail the scenario; tool and state
+assertions are still evaluated. Any other error stage still fails it.
 
 The maintainer runs it; it needs podman (for `tools/pclink/client.sh`), the VM up, and:
 

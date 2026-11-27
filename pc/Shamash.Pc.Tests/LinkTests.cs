@@ -240,6 +240,60 @@ public class LinkTests
         public Task SendBinaryAsync(ReadOnlyMemory<byte> data, CancellationToken ct) => Task.CompletedTask;
     }
 
+    private sealed class CountingTts : ITextToSpeech
+    {
+        public int Calls;
+        public async IAsyncEnumerable<ReadOnlyMemory<byte>> SynthesizeAsync(string text, [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct)
+        { Calls++; await Task.CompletedTask; yield return new byte[640]; }
+    }
+
+    private sealed class ListSender : ITurnSender
+    {
+        public readonly List<string> Events = [];
+        public Task SendTextAsync(string json, CancellationToken ct)
+        {
+            using var d = JsonDocument.Parse(json);
+            Events.Add(d.RootElement.GetProperty("type").GetString()!);
+            return Task.CompletedTask;
+        }
+        public Task SendBinaryAsync(ReadOnlyMemory<byte> data, CancellationToken ct) { Events.Add("bin"); return Task.CompletedTask; }
+    }
+
+    [Fact]
+    public async Task TextTurn_NoTts_SkipsSynthesis()
+    {
+        var tts = new CountingTts();
+        var pipe = new TurnPipeline(new NoStt(), new EchoReplyModel(), tts, NullLogger.Instance, allowTextTurns: true);
+        var s = new ListSender();
+        var r = await pipe.RunAsync([], 16000, s, default, "hello", noTts: true);
+        Assert.Equal(["transcript", "reply", "done"], s.Events);
+        Assert.Equal(0, tts.Calls);
+        Assert.True(r.Done);
+        Assert.Null(r.TtsFirstByteMs);
+        Assert.Null(r.TtsTotalMs);
+        Assert.Equal(0, r.TtsBytes);
+        using var j = JsonDocument.Parse(r.ToJson());
+        Assert.Equal(JsonValueKind.Null, j.RootElement.GetProperty("timingsMs").GetProperty("ttsFirstByte").ValueKind);
+        Assert.Equal(JsonValueKind.Null, j.RootElement.GetProperty("timingsMs").GetProperty("ttsTotal").ValueKind);
+    }
+
+    [Fact]
+    public async Task TextTurn_NoTts_IgnoredWhenTextTurnsOff()
+    {
+        // gate off: the hello text is ignored, so the turn is a normal audio turn and noTts must not skip synthesis
+        var tts = new CountingTts();
+        var pipe = new TurnPipeline(new SaysHi(), new EchoReplyModel(), tts, NullLogger.Instance, allowTextTurns: false);
+        var s = new ListSender();
+        await pipe.RunAsync(new byte[32000], 16000, s, default, "hello", noTts: true);
+        Assert.Equal(["transcript", "reply", "audio_start", "bin", "audio_end", "done"], s.Events);
+        Assert.Equal(1, tts.Calls);
+    }
+
+    private sealed class SaysHi : ISpeechToText
+    {
+        public Task<string> TranscribeAsync(byte[] wav, CancellationToken ct) => Task.FromResult("hi");
+    }
+
     [Theory]
     [InlineData(true)]
     [InlineData(false)]

@@ -18,6 +18,7 @@ the PC setting `allowTextTurns` is true (config.json key, or `SHAMASH_ALLOW_TEXT
 skips speech-to-text and uses the text as the transcript. The phone then sends `end` as usual (no audio is needed;
 audio frames before `end` are ignored) and the PC answers as in any turn: `transcript` (the given text), `reply`,
 audio, `done`. With the setting off the `text` field is ignored. The phone app never sends it; `tools/pclink/client.py --text` does.
+A text `hello` may also carry `"noTts": true` (honoured only with `allowTextTurns` on, ignored otherwise): after the model reply the PC skips TTS entirely and sends `transcript`, `reply`, `done` (no `audio_start`, audio frames or `audio_end`); the turn JSON has `ttsFirstByte`/`ttsTotal` null and `ttsBytes` 0, and one log line notes the skip. `client.py --text ... --no-tts` sets it; the scenario suite uses it to avoid paying for speech.
 
 Test aid, direct tool call: a text message `{"type":"tool","name":"<tool name>","input":{...}}` (no `hello`
 needed), accepted ONLY when `allowTextTurns` is true. The PC looks the tool up in the same list the conversation

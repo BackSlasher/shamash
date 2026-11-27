@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Runs one scenario file against the VM (called by run.sh); stdlib only.
 
-    check.py <scenario.json> [--url ws://127.0.0.1:8777/]
+    check.py <scenario.json> [--url ws://127.0.0.1:8777/] [--tts]
 
 Prints PASS or FAIL <name>: <reason> and exits 0/1. Assertions are about tool names, result
 prefixes, timing and end state, never about the model's wording. See README.md for the format.
@@ -76,15 +76,19 @@ def check_turn(turn: dict, data: dict, wall_ms: int) -> list[str]:
         total = (data.get("timingsMs") or {}).get("total") or wall_ms
         if total > limit:
             errs.append(f"turn took {total} ms, limit {limit}")
-    if data.get("error"):
-        errs.append(f"turn reported an error: {data['error']}")
+    err = data.get("error")
+    if err and err.get("stage") == "tts":
+        print(f"  WARNING: turn ended with a TTS error (not a failure): {err.get('message')}")
+    elif err:
+        errs.append(f"turn reported an error: {err}")
     return errs
 
 
-def run_turn(turn: dict, url: str) -> list[str]:
+def run_turn(turn: dict, url: str, tts: bool = False) -> list[str]:
     before, _ = newest_turn()
     t0 = time.time()
-    r = subprocess.run([CLIENT, url, "--text", turn["say"]], capture_output=True, text=True, timeout=300)
+    cmd = [CLIENT, url, "--text", turn["say"]] + ([] if tts else ["--no-tts"])
+    r = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
     wall = int((time.time() - t0) * 1000)
     if r.returncode != 0:
         return [f"client exited {r.returncode}: {(r.stdout + r.stderr).strip()[-300:]}"]
@@ -104,6 +108,9 @@ def main() -> int:
     url = "ws://127.0.0.1:8777/"
     if "--url" in args:
         i = args.index("--url"); url = args[i + 1]; del args[i:i + 2]
+    tts = "--tts" in args
+    if tts:
+        args.remove("--tts")
     sc = json.loads(Path(args[0]).read_text(encoding="utf-8"))
     name = sc.get("name", Path(args[0]).stem)
     failures: list[str] = []
@@ -116,7 +123,7 @@ def main() -> int:
         for line in sc.get("setup", []):
             ps(line)
         for n, turn in enumerate(sc.get("turns", []), 1):
-            failures += [f"turn {n}: {e}" for e in run_turn(turn, url)]
+            failures += [f"turn {n}: {e}" for e in run_turn(turn, url, tts)]
         for st in sc.get("expect_state", []):
             got = ps(st["ps"])
             if got != st["equals"]:

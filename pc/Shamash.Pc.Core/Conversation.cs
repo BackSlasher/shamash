@@ -164,7 +164,7 @@ public sealed class TurnPipeline(ISpeechToText stt, IReplyModel llm, ITextToSpee
         new TranslateDocumentTool(settings.DocumentRoots, new ClaudeTranslator(settings.AnthropicApiKey, settings.TranslateModel ?? settings.ClaudeModel)),
     ];
 
-    public async Task<TurnResult> RunAsync(byte[] pcm, int sampleRate, ITurnSender sender, CancellationToken ct, string? text = null)
+    public async Task<TurnResult> RunAsync(byte[] pcm, int sampleRate, ITurnSender sender, CancellationToken ct, string? text = null, bool noTts = false)
     {
         var result = new TurnResult();
         var usage = UsageScope.Begin();
@@ -217,7 +217,15 @@ public sealed class TurnPipeline(ISpeechToText stt, IReplyModel llm, ITextToSpee
             stage = "internal";
             await sender.SendTextAsync(TurnJson.Message("reply", ("text", reply)), ct);
 
-            // 5. TTS, streamed
+            // 5. TTS, streamed (test aid: skipped for a text turn with noTts, allowTextTurns only)
+            if (allowTextTurns && noTts && !string.IsNullOrWhiteSpace(text))
+            {
+                log.LogInformation("turn: TTS skipped (noTts text turn)");
+                await sender.SendTextAsync(TurnJson.Message("done"), ct);
+                result.Done = true;
+                Finish();
+                return result;
+            }
             stage = "tts";
             sw.Restart();
             var started = false;
