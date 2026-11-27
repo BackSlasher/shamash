@@ -178,6 +178,12 @@ Without device owner the app is an ordinary app: it hides the system bars (immer
 3. Settings > About phone: tap Build number 7 times. Then Developer options > enable USB debugging.
 4. Connect USB, run `adb devices`, accept the RSA (Rivest-Shamir-Adleman) key prompt on the phone **and tick "Always allow from this computer"**; the device must show as `device`, not `unauthorized`. Then `adb reboot` once and confirm it still shows as `device`. A one-time approval is forgotten on reboot, and once the phone is in lock task mode the approval dialog may not be reachable, which locks you out of adb (this happened on 2026-11-25).
 5. `adb install -t -r android/app/build/outputs/apk/debug/app-debug.apk`
+   Then make the power button useful and the assistant gone (Pixel default: press-and-hold power opens the Google assistant, which is worse than useless here; done on the test phone 2026-11-27):
+   ```
+   adb shell settings put global power_button_long_press 1      # 1 = power menu (Power off / Restart / Emergency)
+   adb shell pm disable-user --user 0 com.google.android.googlequicksearchbox   # the Google app = the assistant
+   ```
+   Verify with `adb shell input keyevent --longpress KEYCODE_POWER`: the power menu must appear (dismiss with `input keyevent KEYCODE_BACK`). The device-owner app cannot set these itself (`setGlobalSetting` allows only a short list of keys), so they are a provisioning step. `pm enable com.google.android.googlequicksearchbox` undoes the second line.
 6. `adb shell dpm set-device-owner net.backslasher.shamash/.kiosk.ShamashAdminReceiver`
    Expected output:
    ```
