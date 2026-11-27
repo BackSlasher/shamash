@@ -319,6 +319,8 @@ Turn times with one tool call were 3-8 s; the translation turn 11 s.
 
 First full run (2026-11-27 12:00, 0.1.16 installed by the runner, version read back from the log): 8/8 scenarios passed. The run before it (0.1.15 build still at 0.1.14 because the old install step silently did nothing, and no history reset) failed 3: two on a missing `resultPrefix` field, one because the model refused to redo a dedup plan it had just been told "no" about in the previous scenario. Both runner defects are fixed.
 
+Runs on 2026-11-27 afternoon (releases 0.1.17 to 0.1.21): each run found something real before reaching 8/8 on a freshly restored VM with 0.1.21: the ElevenLabs quota (suite now silent by default), a hidden window-less Word left by an earlier run (clean step kills those), Word not quitting with its last document (fixed), the search index listing deleted files (filtered), an empty final model reply (one retry), the sorting undo being picked for a dedup plan (guards and descriptions), plan ids not surviving between turns (apply_plan/undo_plan default to the latest plan), and the dedup scenario setup destroying the corpus's duplicates (restores them now).
+
 ## Not verified
 
 - The dialog text of Office 2013+ `NUIDialog` alerts (DirectUI; only the title may be readable).

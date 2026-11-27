@@ -276,7 +276,11 @@ doc("משפחה/זכרונות מהילדות בירושלים.docx", "he", "ז�
 doc("הרצאות/הרצאה לגמלאים - מסעות עולי רגל.docx", "he", "מסעות עולי רגל", "trav", 3, 75)
 
 # ---- write
-if os.path.exists(OUT): shutil.rmtree(OUT)
+# Clear the contents, not the directory itself: OUT is often a container mount point (rmtree fails with EBUSY).
+if os.path.exists(OUT):
+    for e in os.listdir(OUT):
+        q = os.path.join(OUT, e)
+        shutil.rmtree(q) if os.path.isdir(q) else os.remove(q)
 for rel, data, when in files:
     p = os.path.join(OUT, rel); os.makedirs(os.path.dirname(p), exist_ok=True)
     with open(p, "wb") as f: f.write(data)

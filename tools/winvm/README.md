@@ -145,6 +145,10 @@ The maintainer may copy real documents and a real PST into the VM for private te
 afterwards, stay in `~/vm/shamash-win11/`, which is outside the repo. Never commit them and never record their names or
 contents in this repo; keep the public snapshots generic.
 
+### Deploy after a restore
+
+`tools/winvm/deploy.sh pc/out/releases/Shamash.Pc-win-Setup.exe --expect-version <v>` does the whole recipe: waits for ssh, writes `config.json` from `.env` (`tools/pc-config.py`, llm=claude, `allowTextTurns` on) into `%LocalAppData%\Shamash`, installs the Setup.exe silently, removes the config and installer from the shared folder, applies the Outlook object-model-guard policy for the VM user, waits ~75 s and prints the version the service logs (exit 4 if it is not the expected one). Then `tools/winvm/scenarios/run.sh --expect-version <v>`.
+
 ### Outlook object-model guard on the VM
 
 Outlook warns "A program is trying to access e-mail address information" when Security Center does not report a
