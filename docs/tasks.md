@@ -13,14 +13,14 @@ Status values: `idea`, `specified` (enough detail to build), `tooling` (PC-side 
 | Item | Value |
 |---|---|
 | Windows version on his PC | ? (10 / 11, Home / Pro) |
-| Office | ? (Microsoft 365 subscription / Office 2019-2024 perpetual / none), 32- or 64-bit, UI language |
-| Email | ? (Outlook desktop / new Outlook / Gmail in a browser / other), account type (IMAP, Exchange, Gmail) |
-| Where his documents live | ? (`Documents`, Desktop, OneDrive, Google Drive, a second disk, USB sticks) |
-| Document formats he uses | ? (.docx, .doc, .pdf, .rtf, scanned images, .xlsx, .pptx) |
-| Languages in his documents | Hebrew, English, ? |
+| Office | Office 2016 (installer ISO kept on D:\OFFICE2016; exact edition/licence to confirm); ABBYY FineReader 10/14/15 for OCR (owner's saba inventory, 2026-11-12) |
+| Email | Classic (full) Outlook desktop with two accounts: university mail over POP3, Gmail over IMAP (owner, 2026-11-27) |
+| Where his documents live | Live work is C:\Users\User\Desktop (~3,300 files, 9.6 GiB, project folders in Hebrew); C:\Users\User\Documents is small (~140 files: loose docs, scans, FineReader projects, a live PST); the archive is D:\Old D\Data\Documents (63k files, 221 GiB) and D:\Old D\Data\Desktop (14k files); Desktop/Documents/D: are also synced or listed on Google Drive. No OneDrive/Dropbox. Exclude D:\OFFICE2016, ABBYY trees, Outlook Files, D:\Old D\Users\Shmuel (duplicates). |
+| Document formats he uses | Legacy .doc (9,348) outnumbers .docx (8,109); .rtf 2,422; .pdf 19,819 (mostly scanned books, 185 GiB; 236 of 7,206 unique documents have no text layer); .tif/.jpg scans; .txt 372; almost no .xlsx/.pptx. Word ~$ lock files present on the Desktop. |
+| Languages in his documents | Hebrew and English mixed in the same documents and file names (15% of names contain Hebrew); English summaries exist in the inventory |
 | Printer / scanner | ? |
 | Browser and default apps | ? |
-| Other apps he relies on | ? |
+| Other apps he relies on | ABBYY FineReader, AnyDesk, HP printing/fax, classic Outlook (PSTs, 013.net account) |
 | Who else uses the PC | ? |
 
 ## Task template
@@ -84,6 +84,7 @@ Confirmation needed: before sending.
 Seed data for the VM: a test mailbox with a handful of Hebrew and English threads.
 Done when: a reply arrives at a test address.
 Owner notes (2026-11-27): interesting but low priority (Outlook COM is high complexity). If his mail is Gmail/IMAP the PC can read and send directly without Outlook; only Outlook desktop on Exchange needs COM or Graph. Decide after the environment table is filled.
+Design note (2026-11-27): both accounts live in classic Outlook, and the POP3 account's only complete copy may be Outlook's local store, so the tools must drive Outlook itself (COM automation of the running Outlook in his session: enumerate the two stores, read Inbox items, create replies, send). Reading the Gmail account directly over IMAP would cover only half. Outlook's object-model guard may prompt on send or address access unless antivirus is current; verify on his PC. Cannot be tested on the VM without Office/Outlook; a throwaway Microsoft 365 trial or his own licence on the VM is the way to test it. Status stays idea until then.
 
 ### Show a file in Explorer                             status: tested-vm
 Ask: "תראה לי איפה הקובץ הזה נמצא", "תפתח לי את התיקייה של הקובץ"
@@ -139,8 +140,19 @@ Spoken result: "שמרתי וסגרתי" / "סגרתי בלי לשמור" / "ע�
 Confirmation needed: before discarding.
 Seed data for the VM: an open dirty document and an open clean one.
 Done when: dirty and clean documents both close correctly.
+Owner environment (2026-11-27): Office 2016 is on his PC, so Word automation is available; blocked only on an Office for the VM.
 
 <!-- Add tasks below. Printing, calendar, reading a PDF aloud, summarising a long document, dictating a letter, renaming files, finding a photo... -->
+
+## Findings from the saba inventory (2026-11-27)
+
+- Source: `~/projects/saba` holds rclone listings of three Google Drive roots (D:, Desktop, Documents) taken 2026-11-12 (92,857 entries, 333 GiB), a 15 GB partial mirror, `inventory/index.csv` (6,892 documents with LLM category, summary and canonical path), `dedup.json`, and an unapplied consolidation plan for D: (round one: dedup into a Drive quarantine folder; round two: a new folder structure). Its Python tools (python-docx, olefile, striprtf, pypdf, LibreOffice for .doc) are reusable for text extraction.
+- Scale: the current `search_documents` walk cap (2000 files / 10 s) and `find_duplicates` are sized for the live Desktop and Documents, not for D:. Default document roots should be Desktop and Documents; the D: archive should be reachable only through the Windows Search index or the saba `index.csv` canonical paths, never walked, and `find_duplicates` must refuse roots above a file-count threshold.
+- Formats: `read_document` cannot read .doc or .rtf today, which are 11,770 of his files. Needed: a .doc reader (Word COM on his PC since Office 2016 is present, with a library fallback) and an .rtf reader; skip `~$` lock files everywhere; PDFs without a text layer need OCR (FineReader is installed) or are reported as "scan, no text".
+- Dedup overlap: the saba plan already defines canonical paths and a quarantine policy for D:; Shamash's organise tools must not run on D: until that plan is applied, and should reuse its canonical ordering (live Desktop > Data/Documents/<topic> > Data/Desktop > Copy/OLD/salad paths) when it does.
+- Shortcuts: Desktop .lnk files point into D:\Old D; moving targets breaks them (the saba plan tracks this in shortcuts.md).
+- Office 2016 means classic Outlook and Word COM exist on his PC, so "Close a document" and email are feasible there; the VM still needs an Office to test them (his Office 2016 installer and key, if the licence allows a second install, is the cheapest route).
+- Windows Search on his PC: confirm that D: is in the indexed locations and that the Office filters are present (Office 2016 ships them).
 
 ## Suggested order
 
