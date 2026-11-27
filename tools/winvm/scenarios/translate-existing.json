@@ -2,10 +2,12 @@
   "name": "translate-existing",
   "setup": ["Remove-Item \"$env:USERPROFILE\\Documents\\מכתבים\\*English*.docx\" -ErrorAction SilentlyContinue"],
   "turns": [
-    {"say": "תתרגם את המכתב לעירייה לאנגלית ותפתח את התרגום", "expect_tools": ["any:translate_document|open_file"], "max_total_ms": 120000}
+    {"say": "תתרגם את המכתב לעירייה לאנגלית ותפתח את התרגום", "expect_tools": ["any:translate_document|open_file"], "max_total_ms": 120000},
+    {"say": "תסגור את התרגום", "expect_tools": ["close_document"]}
   ],
   "expect_state": [
-    {"ps": "Test-Path \"$env:USERPROFILE\\Documents\\מכתבים\\*English*.docx\"", "equals": "True"}
+    {"ps": "Test-Path \"$env:USERPROFILE\\Documents\\מכתבים\\*English*.docx\"", "equals": "True"},
+    {"ps": "(Get-Process WINWORD -ErrorAction SilentlyContinue | Measure-Object).Count", "equals": "0"}
   ],
   "teardown": [
     "Get-Process WINWORD -ErrorAction SilentlyContinue | ForEach-Object { $null = $_.CloseMainWindow() }",

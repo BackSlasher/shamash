@@ -2,6 +2,7 @@
 """Runs one scenario file against the VM (called by run.sh); stdlib only.
 
     check.py <scenario.json> [--url ws://127.0.0.1:8777/] [--tts]
+    check.py --clean-only          (just the clean-desktop step; run.sh calls it before --install)
 
 Prints PASS or FAIL <name>: <reason> and exits 0/1. Assertions are about tool names, result
 prefixes, timing and end state, never about the model's wording. See README.md for the format.
@@ -23,6 +24,30 @@ UTF8 = "[Console]::OutputEncoding=[Text.Encoding]::UTF8; "
 def ps(cmd: str, timeout: int = 120) -> str:
     r = subprocess.run([SSH, UTF8 + cmd], capture_output=True, timeout=timeout)
     return r.stdout.decode("utf-8", "replace").lstrip("\ufeff").strip()
+
+
+# Gracefully closes leftover app windows so one scenario (or run) cannot leak state into the next.
+# Word is never Stop-Processed (killing it creates Document Recovery entries); Notepad is, after the
+# grace period, only when its title contains "תוכנית" (plan files).
+CLEAN_DESKTOP_PS = (
+    "$names = 'WINWORD','EXCEL','notepad'; "
+    "Get-Process $names -ErrorAction SilentlyContinue | ForEach-Object { $null = $_.CloseMainWindow() }; "
+    "for ($i = 0; $i -lt 8; $i++) { if (-not (Get-Process $names -ErrorAction SilentlyContinue)) { break }; Start-Sleep -Seconds 1 }; "
+    "Get-Process notepad -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowTitle -like '*תוכנית*' } | Stop-Process -Force; "
+    "$w = Get-Process WINWORD -ErrorAction SilentlyContinue; "
+    "if ($w) { 'WARNING: Word still running (title: ' + (($w | ForEach-Object { $_.MainWindowTitle }) -join '; ') + ')' }"
+)
+STATE_WAIT_S, STATE_POLL_S = 10, 2
+
+
+def clean_desktop() -> None:
+    try:
+        out = ps(CLEAN_DESKTOP_PS, timeout=60)
+    except Exception as e:
+        out = f"WARNING: clean-desktop step failed: {type(e).__name__}: {e}"
+    for line in out.splitlines():
+        if line.strip():
+            print(f"  {line.strip()}")
 
 
 def newest_turn() -> tuple[str, dict | None]:
@@ -105,6 +130,9 @@ def run_turn(turn: dict, url: str, tts: bool = False) -> list[str]:
 
 def main() -> int:
     args = sys.argv[1:]
+    if args == ["--clean-only"]:
+        clean_desktop()
+        return 0
     url = "ws://127.0.0.1:8777/"
     if "--url" in args:
         i = args.index("--url"); url = args[i + 1]; del args[i:i + 2]
@@ -120,14 +148,23 @@ def main() -> int:
         print(f"  - history reset did not answer reset_ok (exit {r.returncode}): {(r.stdout + r.stderr).strip()[-300:]}")
         return 1
     try:
+        if not sc.get("keep_apps"):
+            clean_desktop()
         for line in sc.get("setup", []):
             ps(line)
         for n, turn in enumerate(sc.get("turns", []), 1):
             failures += [f"turn {n}: {e}" for e in run_turn(turn, url, tts)]
         for st in sc.get("expect_state", []):
+            waited = 0
             got = ps(st["ps"])
+            while got != st["equals"] and waited < STATE_WAIT_S:
+                time.sleep(STATE_POLL_S)
+                waited += STATE_POLL_S
+                got = ps(st["ps"])
             if got != st["equals"]:
-                failures.append(f"state {st['ps']!r}: expected {st['equals']!r}, got {got!r}")
+                failures.append(f"state {st['ps']!r}: expected {st['equals']!r}, got {got!r} (after {waited} s)")
+            elif waited:
+                print(f"  state {st['ps']!r}: (matched after {waited} s)")
     except Exception as e:  # ssh timeouts and the like
         failures.append(f"harness error: {type(e).__name__}: {e}")
     finally:

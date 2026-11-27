@@ -28,6 +28,8 @@ wait_ssh() {
 
 if [ "$restore" = 1 ]; then "$winvm/snapshot.sh" restore win11-office || exit 1; pause 30; fi
 wait_ssh || exit 1
+# A run never inherits the previous run's windows (the install restarts the service, not Word).
+echo "clean desktop"; python3 "$here/check.py" --clean-only
 if [ -n "$setup" ]; then
   mkdir -p "$vm_dir/shared" && cp "$setup" "$vm_dir/shared/Setup.exe" || exit 1
   "$winvm/ssh.sh" 'Copy-Item \\host.lan\Data\Setup.exe C:\Users\shamash\Setup.exe -Force; Start-Process C:\Users\shamash\Setup.exe -ArgumentList "--silent" -Wait' || exit 1

@@ -30,6 +30,18 @@ The maintainer runs it; it needs podman (for `tools/pclink/client.sh`), the VM u
    service's conversation history, so a "no" in one scenario cannot leak into the next. If the reset does not answer `reset_ok`
    (service too old, allowTextTurns off) the scenario fails at once.
 
+6. Isolation. Besides the history reset, `check.py` runs a "clean desktop" step over ssh before each scenario's `setup`: it calls
+   `CloseMainWindow()` on every WINWORD, EXCEL and notepad process, waits up to 8 s (polling every 1 s) for them to exit, then
+   Stop-Processes only Notepad windows whose title contains `תוכנית` (plan files). Word is never killed (that creates Document
+   Recovery entries); if it is still running (e.g. an unsaved-changes prompt) the step prints `WARNING: Word still running (title: ...)`
+   and the scenario goes on. A scenario can skip the step with `"keep_apps": true`. `run.sh` runs the same step once at the very start,
+   before `--install` (the installer restarts the service, not Word), so a run never inherits the previous run's windows
+   (`check.py --clean-only` does just that).
+7. State grace period. Each `expect_state` check is polled up to 10 s (every 2 s) until it matches, and fails only after that, since
+   Word takes a few seconds to exit after Quit. The output mentions the wait only when it was needed (`(matched after N s)`).
+8. Rule: a scenario that opens something (Word, Excel, Notepad) must close it itself in a final turn (and assert it in `expect_state`);
+   the clean step is a safety net, not a substitute.
+
 Exit code is non-zero if any scenario failed; each failure prints the failing assertion.
 
 ## Format
@@ -38,6 +50,7 @@ One JSON file per scenario in this folder, run in file-name order:
 
 ```
 { "name": "...",
+  "keep_apps": false,
   "setup": ["<powershell line>", ...],
   "turns": [ { "say": "<hebrew text turn>",
                "expect_tools": ["search_documents", "open_file", "any:translate_document|open_file"],
@@ -65,7 +78,7 @@ One JSON file per scenario in this folder, run in file-name order:
 | file | what it checks |
 | --- | --- |
 | `find-open-close` | search without opening; open; is it open; close; no Word window with the letter left |
-| `translate-existing` | translate the letter to English and open it; the `*English*.docx` exists in `Documents\מכתבים` (removed again) |
+| `translate-existing` | translate the letter to English and open it; the `*English*.docx` exists in `Documents\מכתבים` (removed again); close the translation, no Word left |
 | `mail-list-no-send` | list the three latest mails; never `send_draft` or `draft_reply` |
 | `dedup-ask-then-no` | `find_duplicates` on the articles folder, no `apply_plan`; after "no" still none and no `כפולים` folder |
 | `dedup-yes-undo` | "yes" applies the plan, "put everything back" calls `undo_plan`; `כפולים` is absent or has no files |
