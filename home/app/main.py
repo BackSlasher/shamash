@@ -6,6 +6,7 @@ import asyncio
 import json
 import os
 import time
+from datetime import datetime, timezone
 from contextlib import asynccontextmanager
 
 import uvicorn
@@ -15,6 +16,18 @@ from fastapi.responses import JSONResponse
 from . import auth
 from .db import Database, now_iso
 from .ui import create_ui_app
+
+
+MAX_TURNS_PER_CALL = 200
+MAX_LOG_LINES_PER_CALL = 500
+
+
+def normalize_time(value) -> str:
+    """ISO-8601 (any offset, optional fraction) to UTC "YYYY-MM-DDTHH:MM:SSZ", the format retention compares against."""
+    t = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    if t.tzinfo is None:
+        t = t.replace(tzinfo=timezone.utc)
+    return t.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def create_api_app(db: Database, enrol_token: str, retention_days: int = 365) -> FastAPI:
@@ -84,15 +97,47 @@ def create_api_app(db: Database, enrol_token: str, retention_days: int = 365) ->
             return JSONResponse({"error": "bad request"}, status_code=400)
         db.add_heartbeat(client["id"], payload)
         desired, hold = db.steering()
-        return {"serverTime": now_iso(), "desiredVersion": desired, "hold": hold, "commands": []}
+        control = db.control(client["id"])
+        return {"serverTime": now_iso(), "desiredVersion": control["desiredVersion"] or desired,
+                "hold": hold or control["hold"], "commands": db.take_commands(client["id"])}
+
+    async def json_list(request: Request, key: str, limit: int):
+        """(client, items, None) or (None, None, error response)."""
+        client, body, reason = await authenticate(request)
+        if client is None:
+            return None, None, unauthorized(reason)
+        try:
+            items = json.loads(body or b"{}")[key]
+            if not isinstance(items, list) or len(items) > limit:
+                raise ValueError
+        except (ValueError, KeyError, TypeError):
+            return None, None, JSONResponse({"error": "bad request"}, status_code=400)
+        return client, items, None
 
     @app.post("/api/turns")
     async def turns(request: Request):
-        return JSONResponse({"error": "not implemented"}, status_code=501)
+        client, items, error = await json_list(request, "turns", MAX_TURNS_PER_CALL)
+        if client is None:
+            return error
+        try:
+            parsed = [(str(t["turnId"]), normalize_time(t["time"]), t["record"]) for t in items]
+            if not all(isinstance(t[2], dict) and t[0] for t in parsed):
+                raise ValueError
+        except (ValueError, KeyError, TypeError):
+            return JSONResponse({"error": "bad request"}, status_code=400)
+        accepted, duplicates = db.add_turns(client["id"], parsed)
+        return {"accepted": accepted, "duplicates": duplicates}
 
     @app.post("/api/logs")
     async def logs(request: Request):
-        return JSONResponse({"error": "not implemented"}, status_code=501)
+        client, items, error = await json_list(request, "lines", MAX_LOG_LINES_PER_CALL)
+        if client is None:
+            return error
+        try:
+            parsed = [(normalize_time(l["time"]), str(l["level"])[:20], str(l["message"])[:4000]) for l in items]
+        except (ValueError, KeyError, TypeError):
+            return JSONResponse({"error": "bad request"}, status_code=400)
+        return {"accepted": db.add_logs(client["id"], parsed)}
 
     return app
 

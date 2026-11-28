@@ -69,26 +69,45 @@ Request:
 Response `200`:
 ```json
 { "serverTime": "2026-11-27T13:08:00Z", "desiredVersion": "0.1.21" | null, "hold": false,
-  "commands": [ { "id": "k1", "type": "upload_logs" | "restart" | "noop", "args": {} } ] }
+  "commands": [ { "id": "k_1a2b3c4d", "type": "check_update" | "restart", "args": {} } ] }
 ```
-`desiredVersion`/`hold` are for update steering (slice 3): the PC installs only the named version and never while
-`hold` is true. `commands` are acknowledged by the next heartbeat's `ackCommands: ["k1"]` (slice 2+).
+Steering, set per client in the UI (the front page's global desired version and hold apply too; `hold` is true if
+either is set):
 
-### `POST /api/turns` (signed, slice 2)
+- `hold`: the PC skips its periodic update checks while it is true.
+- `desiredVersion`: recorded by the PC and shown in the status window. Pinning is not implemented: Velopack still
+  updates to the latest GitHub release.
+- `commands`: one-shot. The server clears the queue when it sends the reply, so a command is delivered once (there is
+  no acknowledgement). Command types: `check_update` (check for an update now) and `restart` (restart the service;
+  a PC without a restart path logs a warning and ignores it). A PC ignores types it does not know.
 
-Request: `{ "turns": [ <the per-turn JSON the PC already writes under pclink/>, … ] }` (≤ 50 per call), each with a
-`stamp` (the file's timestamp key) so re-uploads are deduplicated. Response `200`: `{ "accepted": N }`.
+### `POST /api/turns` (signed)
 
-### `POST /api/logs` (signed, slice 2)
+Request:
+```json
+{ "turns": [ { "turnId": "pclink-20261127-130730", "time": "2026-11-27T13:07:30Z", "record": { "...": "the per-turn JSON" } } ] }
+```
+At most 200 per call (the PC sends up to 50). `turnId` is the base name of the file the PC writes under `pclink/`
+and is unique per client; `record` is that file's content as is. Items whose `(client, turnId)` already exist are
+ignored, so retries are safe. Response `200`: `{ "accepted": N, "duplicates": M }`. `400` on a malformed body or more
+than 200 turns. The PC queues turns in memory only (500 at most, oldest dropped): a restart or a long outage loses the
+unsent ones.
 
-Body: gzip of the log text, `Content-Encoding: gzip`, query `?from=<iso>&to=<iso>`. Response `200`.
+### `POST /api/logs` (signed)
+
+Request: `{ "lines": [ { "time": "2026-11-27T13:07:30Z", "level": "Warning", "message": "..." } ] }`, at most 500 per
+call. Response `200`: `{ "accepted": N }`. `400` on a malformed body or more than 500 lines. The PC sends Warning and
+above, plus Information lines starting `turn:`, `tool:`, `llm usage:` or `missing feature:`.
 
 ## Server side
 
 - Two listeners in one container: the **API** (`/api/*`, public site, Let's Encrypt) and the **UI** (`/`, behind the
   owner's house client certificate). Data in SQLite under `/data`. Retention: one year (nightly cleanup).
-- The UI shows: clients (last seen, version, revoke), today's and this week's turns and token cost, the turn log, errors,
-  phone battery/charging, update controls (desired version, hold).
+- The UI shows: clients (last seen, version, revoke), today's token cost, errors, phone battery/charging, global update
+  controls (desired version, hold), and per client: the last 50 turns (full record on its own page), the last 300 log
+  lines with a level filter, hold / desired version, and buttons that queue `check_update` and `restart`. A
+  "missing features" page lists turns that called `report_missing_feature`. Turns and logs are kept for the retention
+  window.
 
 ## PC side
 

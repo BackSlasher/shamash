@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Shamash home - turn</title>
+<style>
+body{font-family:system-ui,sans-serif;margin:0 auto;max-width:60rem;padding:0 1rem;line-height:1.4}
+section{border:1px solid #8885;border-radius:8px;padding:.5rem 1rem;margin:1rem 0}
+.revoked{opacity:.5}
+dl{display:grid;grid-template-columns:max-content 1fr;gap:.2rem 1rem;margin:.5rem 0}
+dt{color:#888}dd{margin:0;word-break:break-word}
+table{border-collapse:collapse;width:100%;font-size:.85rem;display:block;overflow-x:auto}
+td,th{padding:.15rem .5rem;text-align:left;white-space:nowrap}
+.err{color:#c00}
+button{padding:.4rem .8rem}
+.turn{border-top:1px solid #8885;padding:.5rem 0}
+.tools{color:#888;font-size:.85rem;margin:.2rem 0}
+pre{white-space:pre-wrap;word-break:break-word;background:#8881;padding:.5rem;border-radius:6px}
+</style></head><body>
+<p><a href="/clients/{{ c['id'] }}">&larr; {{ c['name'] }}</a></p>
+<h1>Turn {{ t.turnId }}</h1>
+<p>{{ t.time }}</p>
+<p>Heard: <span dir="auto">{{ t.record.get('transcript') or '-' }}</span></p>
+<p>Said: <span dir="auto">{{ t.record.get('reply') or '-' }}</span></p>
+{% for call in t.record.get('toolCalls') or [] %}<div class="tools" dir="auto">{{ tool_line(call) }}</div>{% endfor %}
+<h2>Full record</h2>
+<pre dir="auto">{{ full }}</pre>
+</body></html>

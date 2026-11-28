@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Shamash home - {{ c['name'] }}</title>
+<style>
+body{font-family:system-ui,sans-serif;margin:0 auto;max-width:60rem;padding:0 1rem;line-height:1.4}
+section{border:1px solid #8885;border-radius:8px;padding:.5rem 1rem;margin:1rem 0}
+.revoked{opacity:.5}
+dl{display:grid;grid-template-columns:max-content 1fr;gap:.2rem 1rem;margin:.5rem 0}
+dt{color:#888}dd{margin:0;word-break:break-word}
+table{border-collapse:collapse;width:100%;font-size:.85rem;display:block;overflow-x:auto}
+td,th{padding:.15rem .5rem;text-align:left;white-space:nowrap}
+.err{color:#c00}
+button{padding:.4rem .8rem}
+.turn{border-top:1px solid #8885;padding:.5rem 0}
+.tools{color:#888;font-size:.85rem;margin:.2rem 0}
+pre{white-space:pre-wrap;word-break:break-word;background:#8881;padding:.5rem;border-radius:6px}
+</style></head><body>
+<p><a href="/">&larr; Clients</a> | <a href="/clients/{{ c['id'] }}/logs">Logs</a> | <a href="/missing-features">Missing features</a></p>
+<h1>{{ c['name'] }}{% if c['revoked'] %} (revoked){% endif %}</h1>
+<section>
+<h2>Steering</h2>
+<form method="post" action="/clients/{{ c['id'] }}/control">
+<label>Desired version <input name="desiredVersion" value="{{ control.desiredVersion or '' }}" placeholder="none"></label>
+<label><input type="checkbox" name="hold" value="1" {% if control.hold %}checked{% endif %}> Hold (no installs)</label>
+<button type="submit">Save</button>
+</form>
+<p>
+{% for cmd in commands %}
+<form method="post" action="/clients/{{ c['id'] }}/command" style="display:inline"><input type="hidden" name="command" value="{{ cmd }}"><button type="submit">Queue {{ cmd }}</button></form>
+{% endfor %}
+</p>
+{% if control.commands %}<p>Waiting for the next heartbeat: {% for k in control.commands %}{{ k.type }}{% if not loop.last %}, {% endif %}{% endfor %}</p>{% endif %}
+<p><small>Per-client settings add to the global ones on the front page (hold applies if either is set).</small></p>
+</section>
+<h2>Last {{ turns|length }} turns</h2>
+{% for t in turns %}{% set r = t.record %}
+<div class="turn">
+<div><a href="/clients/{{ c['id'] }}/turns/{{ t.turnId }}">{{ t.time }}</a>
+{% if r.get('error') %}<span class="err">error [{{ r.error.get('stage') }}] {{ r.error.get('message') }}</span>{% endif %}</div>
+<div>Heard: <span dir="auto">{{ r.get('transcript') or '-' }}</span></div>
+<div>Said: <span dir="auto">{{ r.get('reply') or '-' }}</span></div>
+{% for call in r.get('toolCalls') or [] %}<div class="tools" dir="auto">{{ tool_line(call) }}</div>{% endfor %}
+{% set u = r.get('usage') or {} %}<div class="tools">usage: {{ u.get('calls', 0) }} calls, in {{ u.get('input', 0) }}, cache read {{ u.get('cacheRead', 0) }}, cache write {{ u.get('cacheWrite', 0) }}, out {{ u.get('output', 0) }}</div>
+</div>
+{% else %}<p>No turns uploaded yet.</p>{% endfor %}
+</body></html>

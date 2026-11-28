@@ -24,7 +24,34 @@ MIGRATIONS = [
     CREATE INDEX heartbeats_client_at ON heartbeats (client_id, at);
     CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT);
     """,
+    """
+    CREATE TABLE turns (
+        client_id TEXT NOT NULL,
+        turn_id TEXT NOT NULL,
+        time TEXT NOT NULL,
+        record TEXT NOT NULL,
+        received_at TEXT NOT NULL,
+        PRIMARY KEY (client_id, turn_id)
+    );
+    CREATE INDEX turns_client_time ON turns (client_id, time);
+    CREATE TABLE logs (
+        client_id TEXT NOT NULL,
+        time TEXT NOT NULL,
+        level TEXT NOT NULL,
+        message TEXT NOT NULL,
+        received_at TEXT NOT NULL
+    );
+    CREATE INDEX logs_client_time ON logs (client_id, time);
+    CREATE TABLE client_control (
+        client_id TEXT PRIMARY KEY,
+        hold INTEGER NOT NULL DEFAULT 0,
+        desired_version TEXT,
+        pending_commands TEXT NOT NULL DEFAULT '[]'
+    );
+    """,
 ]
+
+COMMANDS = ("check_update", "restart")
 
 
 def now_iso() -> str:
@@ -89,7 +116,100 @@ class Database:
     def cleanup(self, retention_days: int) -> int:
         cutoff = (datetime.now(timezone.utc) - timedelta(days=retention_days)).strftime("%Y-%m-%dT%H:%M:%SZ")
         with self.lock, self.conn:
-            return self.conn.execute("DELETE FROM heartbeats WHERE at < ?", (cutoff,)).rowcount
+            n = self.conn.execute("DELETE FROM heartbeats WHERE at < ?", (cutoff,)).rowcount
+            n += self.conn.execute("DELETE FROM turns WHERE time < ?", (cutoff,)).rowcount
+            n += self.conn.execute("DELETE FROM logs WHERE time < ?", (cutoff,)).rowcount
+            return n
+
+    # turns and logs
+    def add_turns(self, cid: str, turns: list[tuple[str, str, dict]]) -> tuple[int, int]:
+        """(turn_id, time, record) items; returns (accepted, duplicates). Existing (client, turn_id) pairs are kept."""
+        accepted = 0
+        with self.lock, self.conn:
+            for turn_id, time_, record in turns:
+                accepted += self.conn.execute(
+                    "INSERT OR IGNORE INTO turns (client_id, turn_id, time, record, received_at) VALUES (?,?,?,?,?)",
+                    (cid, turn_id, time_, json.dumps(record, ensure_ascii=False), now_iso())).rowcount
+        return accepted, len(turns) - accepted
+
+    def recent_turns(self, cid: str, limit: int = 50) -> list[dict]:
+        with self.lock:
+            rows = self.conn.execute(
+                "SELECT turn_id, time, record FROM turns WHERE client_id=? ORDER BY time DESC, rowid DESC LIMIT ?",
+                (cid, limit)).fetchall()
+        return [{"turnId": r["turn_id"], "time": r["time"], "record": json.loads(r["record"])} for r in rows]
+
+    def get_turn(self, cid: str, turn_id: str) -> dict | None:
+        with self.lock:
+            r = self.conn.execute("SELECT turn_id, time, record FROM turns WHERE client_id=? AND turn_id=?",
+                                  (cid, turn_id)).fetchone()
+        return {"turnId": r["turn_id"], "time": r["time"], "record": json.loads(r["record"])} if r else None
+
+    def turns_mentioning(self, text: str, limit: int = 500) -> list[dict]:
+        """Newest turns whose record text contains `text` (callers filter precisely)."""
+        with self.lock:
+            rows = self.conn.execute(
+                "SELECT client_id, turn_id, time, record FROM turns WHERE instr(record, ?) > 0 "
+                "ORDER BY time DESC, rowid DESC LIMIT ?", (text, limit)).fetchall()
+        return [{"clientId": r["client_id"], "turnId": r["turn_id"], "time": r["time"],
+                 "record": json.loads(r["record"])} for r in rows]
+
+    def add_logs(self, cid: str, lines: list[tuple[str, str, str]]) -> int:
+        with self.lock, self.conn:
+            self.conn.executemany(
+                "INSERT INTO logs (client_id, time, level, message, received_at) VALUES (?,?,?,?,?)",
+                [(cid, t, lvl, msg, now_iso()) for t, lvl, msg in lines])
+        return len(lines)
+
+    def recent_logs(self, cid: str, limit: int = 300, level: str | None = None) -> list[dict]:
+        sql, args = "SELECT time, level, message FROM logs WHERE client_id=?", [cid]
+        if level:
+            sql += " AND lower(level)=lower(?)"
+            args.append(level)
+        with self.lock:
+            rows = self.conn.execute(sql + " ORDER BY time DESC, rowid DESC LIMIT ?", (*args, limit)).fetchall()
+        return [dict(r) for r in rows]
+
+    def log_levels(self, cid: str) -> list[str]:
+        with self.lock:
+            return [r[0] for r in self.conn.execute(
+                "SELECT DISTINCT level FROM logs WHERE client_id=? ORDER BY level", (cid,))]
+
+    # per-client steering (hold, desired version, one-shot commands)
+    def control(self, cid: str) -> dict:
+        with self.lock:
+            r = self.conn.execute("SELECT * FROM client_control WHERE client_id=?", (cid,)).fetchone()
+        if r is None:
+            return {"hold": False, "desiredVersion": None, "commands": []}
+        return {"hold": bool(r["hold"]), "desiredVersion": r["desired_version"],
+                "commands": json.loads(r["pending_commands"])}
+
+    def set_control(self, cid: str, hold: bool, desired_version: str | None) -> None:
+        with self.lock, self.conn:
+            self.conn.execute(
+                "INSERT INTO client_control (client_id, hold, desired_version) VALUES (?,?,?) "
+                "ON CONFLICT(client_id) DO UPDATE SET hold=excluded.hold, desired_version=excluded.desired_version",
+                (cid, int(hold), desired_version))
+
+    def queue_command(self, cid: str, command: str) -> None:
+        if command not in COMMANDS:
+            raise ValueError("unknown command")
+        with self.lock, self.conn:
+            self.conn.execute("INSERT OR IGNORE INTO client_control (client_id) VALUES (?)", (cid,))
+            cmds = json.loads(self.conn.execute(
+                "SELECT pending_commands FROM client_control WHERE client_id=?", (cid,)).fetchone()[0])
+            cmds.append({"id": "k_" + secrets.token_hex(4), "type": command, "args": {}})
+            self.conn.execute("UPDATE client_control SET pending_commands=? WHERE client_id=?",
+                              (json.dumps(cmds), cid))
+
+    def take_commands(self, cid: str) -> list[dict]:
+        """Returns the pending commands and clears them: a command is delivered once."""
+        with self.lock, self.conn:
+            r = self.conn.execute("SELECT pending_commands FROM client_control WHERE client_id=?", (cid,)).fetchone()
+            if r is None or r[0] == "[]":
+                return []
+            self.conn.execute("UPDATE client_control SET pending_commands='[]' WHERE client_id=?", (cid,))
+            return json.loads(r[0])
 
     # settings
     def get_setting(self, key: str) -> str | None:

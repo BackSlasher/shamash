@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Shamash home - missing features</title>
+<style>
+body{font-family:system-ui,sans-serif;margin:0 auto;max-width:60rem;padding:0 1rem;line-height:1.4}
+section{border:1px solid #8885;border-radius:8px;padding:.5rem 1rem;margin:1rem 0}
+.revoked{opacity:.5}
+dl{display:grid;grid-template-columns:max-content 1fr;gap:.2rem 1rem;margin:.5rem 0}
+dt{color:#888}dd{margin:0;word-break:break-word}
+table{border-collapse:collapse;width:100%;font-size:.85rem;display:block;overflow-x:auto}
+td,th{padding:.15rem .5rem;text-align:left;white-space:nowrap}
+.err{color:#c00}
+button{padding:.4rem .8rem}
+.turn{border-top:1px solid #8885;padding:.5rem 0}
+.tools{color:#888;font-size:.85rem;margin:.2rem 0}
+pre{white-space:pre-wrap;word-break:break-word;background:#8881;padding:.5rem;border-radius:6px}
+</style></head><body>
+<p><a href="/">&larr; Clients</a></p>
+<h1>Missing features</h1>
+<p>Requests the assistant reported with <code>report_missing_feature</code>, newest first.</p>
+{% for r in rows %}
+<div class="turn">
+<div><a href="/clients/{{ r.clientId }}/turns/{{ r.turnId }}">{{ r.time }}</a> {{ r.client }}</div>
+<div dir="auto"><strong>{{ r.request }}</strong></div>
+<div class="tools" dir="auto">Heard: {{ r.transcript or '-' }}</div>
+</div>
+{% else %}<p>None yet.</p>{% endfor %}
+</body></html>
