@@ -21,6 +21,9 @@ public sealed record ShamashSettings(
     /// <summary>Folders the document tools may search and read. Default on Windows: Documents and Desktop.</summary>
     public IReadOnlyList<string> DocumentRoots { get; init; } = [];
 
+    /// <summary>Extra folders searched and read for pictures only (search_documents kind picture, insert_picture). Default on Windows: the user's Pictures folder. Env SHAMASH_PICTURE_ROOTS, config key pictureRoots.</summary>
+    public IReadOnlyList<string> PictureRoots { get; init; } = [];
+
     /// <summary>Folders with more files than this are refused by find_duplicates and the sort_folder tools. Env SHAMASH_MAX_ORGANIZE_FILES, config key maxOrganizeFiles.</summary>
     public int MaxOrganizeFiles { get; init; } = DefaultMaxOrganizeFiles;
 
@@ -92,6 +95,7 @@ public sealed record ShamashSettings(
             Pick("SHAMASH_CLAUDE_MODEL", "claudeModel") ?? DefaultClaudeModel)
         {
             DocumentRoots = PickRoots(getEnv("SHAMASH_DOCUMENT_ROOTS"), file),
+            PictureRoots = PickRoots(getEnv("SHAMASH_PICTURE_ROOTS"), file, "pictureRoots", [Environment.SpecialFolder.MyPictures]),
             TranslateModel = Pick("SHAMASH_TRANSLATE_MODEL", "translateModel"),
             MaxOrganizeFiles = int.TryParse(Pick("SHAMASH_MAX_ORGANIZE_FILES", "maxOrganizeFiles"), out var mo) && mo > 0 ? mo : DefaultMaxOrganizeFiles,
             HomeUrl = Pick("SHAMASH_HOME_URL", "homeUrl"),
@@ -109,12 +113,13 @@ public sealed record ShamashSettings(
         return file is { } f && f.TryGetProperty(key, out var p) && p.ValueKind == JsonValueKind.True;
     }
 
-    private static List<string> PickRoots(string? env, JsonElement? file)
+    private static List<string> PickRoots(string? env, JsonElement? file, string key = "documentRoots",
+        Environment.SpecialFolder[]? windowsDefaults = null)
     {
         var roots = new List<string>();
         if (!string.IsNullOrWhiteSpace(env))
             roots.AddRange(env.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
-        else if (file is { } f && f.TryGetProperty("documentRoots", out var p))
+        else if (file is { } f && f.TryGetProperty(key, out var p))
         {
             if (p.ValueKind == JsonValueKind.Array)
                 roots.AddRange(p.EnumerateArray().Where(e => e.ValueKind == JsonValueKind.String).Select(e => e.GetString()!.Trim()));
@@ -123,8 +128,8 @@ public sealed record ShamashSettings(
         }
         else if (OperatingSystem.IsWindows())
         {
-            roots.Add(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments));
-            roots.Add(Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory));
+            foreach (var folder in windowsDefaults ?? [Environment.SpecialFolder.MyDocuments, Environment.SpecialFolder.DesktopDirectory])
+                roots.Add(Environment.GetFolderPath(folder));
         }
         return roots.Where(r => r.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
     }

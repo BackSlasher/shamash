@@ -247,7 +247,7 @@ public static class PathResolver
 {
     private static readonly Dictionary<string, string> Aliases = new(StringComparer.OrdinalIgnoreCase)
     {
-        ["מסמכים"] = "Documents", ["שולחן העבודה"] = "Desktop", ["שולחן עבודה"] = "Desktop",
+        ["מסמכים"] = "Documents", ["שולחן העבודה"] = "Desktop", ["שולחן עבודה"] = "Desktop", ["תמונות"] = "Pictures",
     };
 
     public static string? ResolveFolder(string path, IReadOnlyList<string> roots)
@@ -351,7 +351,7 @@ public sealed class WindowsSearchIndex : IDocumentIndex
     private static string CleanWord(string w) => new(w.Where(c => c is not ('"' or '%' or '_' or '[' or ']' or '*')).ToArray());
 }
 
-public sealed class SearchDocumentsTool(IReadOnlyList<string> roots, IDocumentIndex? index = null) : IAgentTool
+public sealed class SearchDocumentsTool(IReadOnlyList<string> roots, IDocumentIndex? index = null, IReadOnlyList<string>? pictureRoots = null) : IAgentTool
 {
     public const long ContentMaxBytes = 5L * 1024 * 1024;
     public const int DefaultMax = 10;
@@ -373,7 +373,7 @@ public sealed class SearchDocumentsTool(IReadOnlyList<string> roots, IDocumentIn
         "Returns numbered lines: name | folder | modified date | size KB, newest first (hits for files deleted but still in the lagging index are dropped and noted). The folder column starts with the root folder name (Desktop or Documents), then the subfolders; pass it as folder/name to the other tools. " +
         "If it returns an error saying the search index is not available, tell the user so plainly and ask them to try again in a minute; do not guess file names.";
     public string InputSchema => """
-        {"type":"object","properties":{"query":{"type":"string","description":"Keywords to look for in names and content"},"kind":{"type":"string","enum":["any","docx","pdf","xlsx","txt"],"description":"File type filter, default any"},"max":{"type":"integer","description":"Number of results, 1 to 20, default 10"}},"required":["query"]}
+        {"type":"object","properties":{"query":{"type":"string","description":"Keywords to look for in names and content"},"kind":{"type":"string","enum":["any","docx","pdf","xlsx","txt","picture"],"description":"File type filter, default any; picture searches image files (jpg, png, tif, gif, bmp) by name, in the document folders and the Pictures folder"},"max":{"type":"integer","description":"Number of results, 1 to 20, default 10"}},"required":["query"]}
         """;
 
     /// <summary>Extensions (with dot) for a kind, null for any.</summary>
@@ -383,8 +383,13 @@ public sealed class SearchDocumentsTool(IReadOnlyList<string> roots, IDocumentIn
         "pdf" => [".pdf"],
         "xlsx" => [".xlsx"],
         "txt" => [".txt", ".md", ".csv"],
+        "picture" => [".jpg", ".jpeg", ".png", ".tif", ".tiff", ".gif", ".bmp"],
         _ => null,
     };
+
+    /// <summary>The folders a search of this kind covers: the document roots, plus the picture roots for kind picture only.</summary>
+    public static IReadOnlyList<string> RootsFor(string kind, IReadOnlyList<string> roots, IReadOnlyList<string>? pictureRoots) =>
+        kind == "picture" && pictureRoots is { Count: > 0 } ? [.. roots, .. pictureRoots.Where(p => !roots.Contains(p, StringComparer.OrdinalIgnoreCase))] : roots;
 
     public Task<string> RunAsync(JsonElement input, CancellationToken ct) => Task.Run(() => Run(input, ct), ct);
 
@@ -396,12 +401,13 @@ public sealed class SearchDocumentsTool(IReadOnlyList<string> roots, IDocumentIn
         var kind = (ToolText.GetString(input, "kind") ?? "any").ToLowerInvariant();
         if (Extensions(kind) is null) kind = "any";
         var max = Math.Clamp(ToolText.GetInt(input, "max") ?? DefaultMax, 1, 20);
-        if (roots.Count == 0) return "error: no document folders configured";
+        var searchRoots = RootsFor(kind, roots, pictureRoots);
+        if (searchRoots.Count == 0) return "error: no document folders configured";
 
         const string Unavailable = "error: the Windows Search index is not available right now. Tell the user plainly that document search is unavailable and ask them to try again in a minute. Do not guess file names.";
         if (_index is null) return Unavailable;
         List<DocumentHit> hits;
-        try { hits = [.. _index.Search(roots, query, words, kind, max, ct).Where(h => !FileSkip.IsIgnored(h.FullPath))]; }
+        try { hits = [.. _index.Search(searchRoots, query, words, kind, max, ct).Where(h => !FileSkip.IsIgnored(h.FullPath))]; }
         catch (OperationCanceledException) { throw; }
         catch (Exception) { return Unavailable; }
         // The index lags deletions: drop hits whose file is already gone.
@@ -414,7 +420,7 @@ public sealed class SearchDocumentsTool(IReadOnlyList<string> roots, IDocumentIn
         var n = 0;
         foreach (var h in hits.Take(max))
         {
-            var root = PathGuard.FindRoot(h.FullPath, roots);
+            var root = PathGuard.FindRoot(h.FullPath, searchRoots);
             var dir = Path.GetDirectoryName(h.FullPath) ?? "";
             string folder;
             if (root is null) folder = Path.GetFileName(dir);
