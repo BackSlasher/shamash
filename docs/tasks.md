@@ -315,7 +315,7 @@ Confirmation needed: none.
 Seed data for the VM: the seed documents from `tools/seed-docs/gen.py`, including the tracked-revisions docx.
 Done when: `tools/winvm/scenarios/run.sh` restores win11-office, installs the build, runs the scenarios and prints pass/fail; a COM-level script suite calls each Office tool directly.
 
-### Dial home: telemetry, turn records and logs         status: built (server deployed; uploads to verify on the VM)
+### Dial home: telemetry, turn records and logs         status: tested-vm (turns, logs and missing features seen on the Athena server; hold and check_update steering not yet exercised)
 Ask (Hebrew, as he would say it): none; this is the owner's view of the deployment.
 What should happen: the PC registers with the owner's home server once (enrolment token, its own P-256 key), then sends a signed heartbeat every few minutes (version, health, turns and tokens today, last error) and uploads each finished turn record and the interesting log lines. The server keeps a year and shows a small web page per client: heartbeats, turns (transcript, reply, tool calls, usage), logs, and the list of requests the agent could not fulfil. The heartbeat reply can hold updates or ask for an immediate update check.
 Touches: `home/` (FastAPI + SQLite, image on GHCR), the fort compose stack on Athena, `HomeLink.cs`, `HomeUpload.cs`, the tray Status window.
@@ -326,7 +326,7 @@ Seed data for the VM: none; the VM registers as its own client.
 Done when: the client page on the home server shows the VM's heartbeats, a turn with its tool calls, log lines, and a `report_missing_feature` request; a hold set in the UI stops the VM's update checks.
 Owner decisions (2026-11-28): no Home Assistant monitoring, small web UI, transcript upload is fine, retention one year, registration by uploading the PC's own public key instead of mTLS.
 
-### Escape hatches: missing feature, look at the screen, generic windows   status: built (VM test pending)
+### Escape hatches: missing feature, look at the screen, generic windows   status: tested-vm
 Ask (Hebrew, as he would say it): "תדפיס לי את המכתב" (no print tool yet); "נפתח לי פה משהו על המסך ואני לא יודע מה זה"; "תסגור את זה".
 Also phrased as: "מה זה החלון הזה?", "על מה ללחוץ?", "תוציא אותי מפה".
 What should happen: (1) a request no tool covers is recorded with `report_missing_feature` (local JSONL, visible on the home server's missing-features page) and he hears that this is not possible yet and was noted; (2) when he describes something on the screen he does not understand, or a tool fails for no clear reason, the agent takes a screenshot (`look_at_screen`, an image the model sees, about 1200 tokens) and reads the window's controls (`describe_window`) and tells him plainly what is there; (3) to get out, the agent prefers closing the window (`close_window`) or Cancel/No over Accept, and can press Escape or Enter and click a named button (`click_control`) through UI Automation.
