@@ -235,6 +235,22 @@ public class WordReviewTests
     }
 
     [Fact]
+    public void AnAnsweredRevisionThatComesBack_BecomesPendingAgain_InsteadOfDuplicating()
+    {
+        using var s = new Sitting();
+        var doc = Five();
+        var original = doc.Revs.ToList();
+        var e = s.Engine();
+        e.Start(doc);
+        e.Answer(["accept", "reject"], doc);
+        doc.Revs = original.ToList();               // the document was closed without saving: all five are back
+        var again = s.Engine().Start(doc);
+        Assert.Contains("remaining 5", again);
+        Assert.StartsWith("revision 3 of 5", s.Engine().Next(doc));   // the pointer stays where it was; the two revived ones wait before it
+        Assert.StartsWith("revision 1 of 5", s.Engine().Answer(["accept", "accept", "accept"], doc).Split("next: ")[1]);
+    }
+
+    [Fact]
     public void ReviewedDocumentsAreKeptApart_ByFullPath()
     {
         using var s = new Sitting();

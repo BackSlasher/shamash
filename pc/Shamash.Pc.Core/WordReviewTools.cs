@@ -179,6 +179,8 @@ public static class ReviewLogic
     /// <summary>Not accepted or rejected: the revision is still in the document (skipped for good included).</summary>
     public static bool IsUnanswered(ReviewItem i) => i.Status is Pending or Skipped or Left;
 
+    public static bool Same(ReviewItem item, RevInfo r) => r.Type == item.Type && r.Author == item.Author && Short(r.Text) == item.Text;
+
     /// <summary>
     /// Index in <paramref name="snapshot"/> of the revision this item stands for, or -1. The revision must match type, author and text;
     /// among several (Word merges nothing, but two identical edits are possible) the one at the stored start wins, else the closest
@@ -191,7 +193,7 @@ public static class ReviewLogic
         for (var i = 0; i < snapshot.Count; i++)
         {
             var r = snapshot[i];
-            if (claimed.Contains(i) || r.Type != item.Type || r.Author != item.Author || Short(r.Text) != item.Text) continue;
+            if (claimed.Contains(i) || !Same(item, r)) continue;
             var d = Math.Abs(r.Start - item.Start);
             if (d < bestDistance) { best = i; bestDistance = d; }
         }
@@ -230,9 +232,12 @@ public static class ReviewLogic
         for (var i = 0; i < snapshot.Count; i++)
         {
             if (claimed.Contains(i)) continue;
-            // An answered item may stand for a revision still in the list only if Word failed to apply it; treat everything unclaimed as new.
-            var item = ItemOf(snapshot[i]);
-            s.Items.Add(item);
+            // A revision nobody claims is either an answered one that came back (Undo, or the document was closed without saving: the item turns pending again) or a new one.
+            var revived = s.Items.Where(o => o.Status is Accepted or Rejected && !oldIndex.ContainsKey(o) && Same(o, snapshot[i]))
+                .OrderBy(o => Math.Abs(o.Start - snapshot[i].Start)).FirstOrDefault();
+            var item = revived ?? ItemOf(snapshot[i]);
+            if (revived is null) s.Items.Add(item);
+            else { item.Status = Pending; item.Start = snapshot[i].Start; item.Key = Key(snapshot[i]); }
             oldIndex[item] = i;
         }
         s.Position = current is not null && s.Items.Contains(current) ? s.Items.IndexOf(current) : -1;
