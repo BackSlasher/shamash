@@ -101,6 +101,9 @@ public sealed record HeartbeatUsage(int Calls, long Input, long CacheWrite, long
 public sealed record HeartbeatError(DateTime At, string Stage, string Message);
 public sealed record HeartbeatMachine(string Name, string Os, bool OfficeInstalled, bool? IndexOk);
 
+/// <summary>The heartbeat's <c>phone</c> object: when the phone last reported and what it said.</summary>
+public sealed record HeartbeatPhone(DateTime LastSeenAt, int BatteryLevel, bool Charging);
+
 public sealed record HeartbeatBody(
     string Version, long UptimeSeconds, string Health, DateTime? LastTurnAt, int TurnsToday,
     HeartbeatUsage? UsageToday, HeartbeatError? LastError, object? Phone, HeartbeatMachine? Machine);
@@ -469,7 +472,7 @@ public sealed class HomeLinkService : BackgroundService
             st.TurnsToday,
             u.Calls > 0 ? new HeartbeatUsage(u.Calls, u.Input, u.CacheWrite, u.CacheRead, u.Output) : null,
             st.LastError is { } e ? new HeartbeatError(e.At.ToUniversalTime(), e.Stage, e.Message) : null,
-            null,
+            st.PhoneBattery is { } pb ? new HeartbeatPhone(pb.SeenAt.ToUniversalTime(), pb.Level, pb.Charging) : null,
             new HeartbeatMachine(Environment.MachineName, RuntimeInformation.OSDescription, OfficeInstalled(), null));
     }
 

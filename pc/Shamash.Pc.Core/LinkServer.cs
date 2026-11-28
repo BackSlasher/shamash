@@ -119,6 +119,8 @@ public sealed class LinkServer(ILoggerFactory loggerFactory, string url, string 
                                 && mode.ValueKind == JsonValueKind.String && mode.GetString() == "conversation";
                             helloText = root.RootElement.TryGetProperty("text", out var tx) && tx.ValueKind == JsonValueKind.String ? tx.GetString() : null;
                             helloNoTts = root.RootElement.TryGetProperty("noTts", out var nt) && nt.ValueKind == JsonValueKind.True;
+                            if (PhoneBattery.FromHello(root.RootElement, DateTime.Now) is { } battery && ServiceStatus.Instance.PhoneReported(battery))
+                                _log.LogInformation("phone: {Battery}", battery.Describe());
                             if (conversation && !wasConversation) ServiceStatus.Instance.TurnStarted();
                             _log.LogInformation("link: hello from {Peer}: {Hello}", peer, Encoding.UTF8.GetString(msg.GetBuffer(), 0, (int)msg.Length));
                         }

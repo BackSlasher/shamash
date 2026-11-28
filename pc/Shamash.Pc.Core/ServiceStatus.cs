@@ -36,6 +36,20 @@ public sealed class ServiceStatus
     private LlmUsage _usageToday = LlmUsage.Zero;
     private DateOnly _day = DateOnly.FromDateTime(DateTime.Now);
 
+    /// <summary>Latest battery report from the phone's hello; null until one arrives.</summary>
+    public PhoneBattery? PhoneBattery { get; private set; }
+
+    /// <summary>Stores a phone report; true when the level or the charging flag differs from the previous one (the caller logs then).</summary>
+    public bool PhoneReported(PhoneBattery b)
+    {
+        lock (_lock)
+        {
+            var changed = PhoneBattery is null || PhoneBattery.Level != b.Level || PhoneBattery.Charging != b.Charging;
+            PhoneBattery = b;
+            return changed;
+        }
+    }
+
     public sealed record ErrorInfo(DateTime At, string Stage, string Message);
     public ErrorInfo? LastError { get; private set; }
 

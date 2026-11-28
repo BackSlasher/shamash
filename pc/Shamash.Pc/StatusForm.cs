@@ -59,6 +59,7 @@ internal sealed class StatusForm : Form
         sb.AppendLine($"Version: {s.Version}");
         sb.AppendLine($"Started: {s.StartedAt:yyyy-MM-dd HH:mm:ss}");
         sb.AppendLine(s.LinkError is not null ? $"Link error: {s.LinkError}" : $"Link: {s.LinkUrl ?? "not listening yet"}");
+        sb.AppendLine(PhoneBattery.StatusLine(s.PhoneBattery));
         sb.AppendLine($"Config: {s.ConfigSummary ?? "-"}");
         sb.AppendLine($"Active turns: {s.ActiveTurns}");
         sb.AppendLine($"Last turn: {(s.LastTurnAt is { } t ? t.ToString("HH:mm:ss") : "none")} {s.LastTurnSummary}");
