@@ -237,7 +237,7 @@ Done when: the footnote exists at the right place with the confirmed text and th
 VM run (2026-11-28): the rerun passed on build 6062bf20 (0.1.25): footnote at the cursor and after_words each undone in one step.
 Owner inbox (2026-11-28): "Add a footnote".
 
-### Insert a picture                                    status: idea
+### Insert a picture                                    status: built (VM test pending)
 Ask (Hebrew, as he would say it): "תכניס כאן את התמונה של ..."
 Also phrased as: "שהטקסט יזרום מסביב", "מעל ומתחת", "יותר קטן"
 What should happen: `search_documents` needs image kinds (jpg/png/tif) and the Pictures folder as a root; then `InlineShapes.AddPicture(path)` at the cursor. "שהטקסט יזרום מסביב" converts it to a Shape with `WrapFormat.Type` = wdWrapSquare (0) or wdWrapTight (1); "מעל ומתחת" = wdWrapTopBottom (4); "יותר קטן" uses `ScaleWidth` / `ScaleHeight`.
@@ -262,7 +262,7 @@ Done when: the right code point is in the document at the cursor.
 Design note (2026-11-28): this is a model-knowledge task; the tool is trivial.
 Owner inbox (2026-11-28): "I want to add a special character (proceeds to describe it)".
 
-### Copy a paragraph from another document              status: idea
+### Copy a paragraph from another document              status: built (VM test pending)
 Ask (Hebrew, as he would say it): "תעתיק לכאן את הפסקה על X מהמסמך Y"
 Also phrased as: "הפסקה השלישית ממסמך Y", "בלי עיצוב"
 What should happen: spot the paragraph together, on screen. `search_documents` for Y; open Y read-only but VISIBLE in Word and bring it to the front; locate the candidate paragraph by number ("הפסקה השלישית") or by content (first words / topic); select it so it is highlighted (`Range.Select()`), and ask "זאת?". On "לא" move the highlight to the next candidate (or take his hint: "יותר למטה", "הפסקה עם ..."); on "כן" copy with `Range.FormattedText` into the remembered cursor position of the target document (keeps formatting), or plain text when he says "בלי עיצוב", then bring the target document back to the front. The read-back is the highlight itself, not spoken text.
