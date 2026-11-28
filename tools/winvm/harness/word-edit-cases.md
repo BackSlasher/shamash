@@ -49,7 +49,7 @@ Every result below also contains `document: מאמר על ירושלים - לע�
 | 4b | `insert_text_at_cursor` with `-SelectParagraph2` | `{"text":"©"}` | `error: text is selected, so typing would replace it` | paragraph 2 text unchanged |
 | 4c | `insert_text_at_cursor` | `{"text":"a\nb\nc"}` | `error: more than one paragraph break` | none |
 | 5 | `add_footnote` | `{"text":"ראו שם, עמ' 7."}` | `footnote ` then a number, ` added at the cursor in paragraph 3; document:` | `$d.Footnotes.Count` = 3; the new one has `.Range.Text` = the text and `.Reference.Start` inside paragraph 3 |
-| 5b | `add_footnote` | `{"text":"ראו גם שם.","after_words":"העות'מאנית המאוחרת"}` | `footnote 3 added after "העות'מאנית המאוחרת" in paragraph 3` (numbering follows position: the new one before the old footnote 2 becomes 2) | the reference sits right after those words |
+| 5b | `add_footnote` | `{"text":"ראו גם שם.","after_words":"העות'מאנית המאוחרת"}` | `footnote 2 added after "העות'מאנית המאוחרת" in paragraph 3` (numbering follows position: the new one before the old footnote 2 becomes 2) | the reference sits right after those words |
 | 5c | `add_footnote` | `{"text":"x","after_words":"לא קיים"}` | `error: "לא קיים" not found in the current paragraph` | `$d.Footnotes.Count` unchanged |
 | 6 | `undo_last_edit` after 3 | `{}` | `undone: 1 step; document:` | paragraph 3 `.LineSpacingRule` back to its old value |
 | 6b | `undo_last_edit` | `{"count":2}` | `undone: 2 steps; document:` | the last two edits are gone |

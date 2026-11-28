@@ -173,7 +173,7 @@ Confirmation needed: none.
 Seed data for the VM: a multi-paragraph .docx open in Word with the cursor placed by script, one variant with a selection and one with tracked changes.
 Done when: with a document open and the cursor in paragraph 3, the tool reports that paragraph's opening words.
 
-### Undo the last edit                                  status: built (VM test pending)
+### Undo the last edit                                  status: tested-vm
 Ask (Hebrew, as he would say it): "תבטל את מה שעשית", "תחזיר את זה כמו שהיה"
 Also phrased as: "בטל", "תחזיר את המסמך לפני השינויים"
 What should happen: `undo_last_edit` calls `ActiveDocument.Undo(n)` (default 1) and says what was undone. Before the FIRST edit of each document in a session, every editing tool takes a backup copy under `%LocalAppData%\Shamash\backups`; `restore_backup` writes `<name> (לפני שמש).docx` next to the original, never overwriting anything.
@@ -183,9 +183,9 @@ Spoken result: "ביטלתי". Every editing tool below must mention "אפשר �
 Confirmation needed: none for undo; none for restore (it only adds a file).
 Seed data for the VM: a document edited by two tools in a row.
 Done when: undo reverts the last edit only, and restore creates the "(לפני שמש)" copy with the original content without touching the original.
-VM run (2026-11-28): undo_last_edit undid half an edit when a tool made several Word undo steps (set_paragraph_spacing with both line spacing and space after, add_footnote: 2 steps each), and does not undo set_track_changes (not on Word's undo stack). Fixed in Core with one Application.UndoRecord per tool call; needs a redeploy and a rerun of cases 3, 5, 6, 6b.
+VM run (2026-11-28): the rerun passed on build 6062bf20 (0.1.25): one undo reverted both line spacing and space after, and two undos took back a footnote plus an insert; undo does not cover the track-changes toggle by design.
 
-### Paragraph spacing                                   status: built (VM test pending)
+### Paragraph spacing                                   status: tested-vm
 Ask (Hebrew, as he would say it): "תעשה רווח של שורה וחצי"
 Also phrased as: "רווח כפול בכל המסמך", "רווח אחרי פסקה", "תחזיר לרווח רגיל"
 What should happen: scope is the selection if any, else the paragraph under the cursor, else ask "בכל המסמך או רק בפסקה הזאת?". Set `Range.ParagraphFormat.LineSpacingRule` (wdLineSpaceSingle = 0, wdLineSpace1pt5 = 1, wdLineSpaceDouble = 2; 4 is wdLineSpaceExactly, not one-and-a-half); "רווח אחרי פסקה" sets `SpaceAfter`. Read the value back after setting.
@@ -195,10 +195,10 @@ Spoken result: "הרווח בפסקה הוא שורה וחצי, אפשר לבט�
 Confirmation needed: none for a paragraph or selection; before acting for the whole document.
 Seed data for the VM: a document with a mix of paragraph styles and a table.
 Done when: the rule reads back as set for exactly the scoped paragraphs.
-VM run (2026-11-28): setting and read-back passed (paragraph, selection, document, cursor-only and missing-argument errors, table cell), but undo after a call with both line spacing and space after reverted only the space after. Fixed with one undo record per call; needs a redeploy and a rerun of case 3 + 6.
+VM run (2026-11-28): the rerun passed on build 6062bf20 (0.1.25): spacing with both values came back in one undo (rule 5, 10 pt).
 Owner inbox (2026-11-28): "Change paragraph spacing to 1.5 lines".
 
-### Track changes on/off                                status: built (VM test pending)
+### Track changes on/off                                status: tested-vm
 Ask (Hebrew, as he would say it): "תדליק מעקב שינויים"
 Also phrased as: "תכבה", "מעקב שינויים דולק?"
 What should happen: `ActiveDocument.TrackRevisions` get and set; say the state before and after.
@@ -208,7 +208,7 @@ Spoken result: "מעקב שינויים היה כבוי ועכשיו הוא דו
 Confirmation needed: none.
 Seed data for the VM: a document with tracking off and one with it on.
 Done when: the property reads back as requested. Simplest of the set; first to build.
-VM run (2026-11-28): on/off and read-back passed, but the result said "undo available" and undo_last_edit answered "nothing to undo" (the toggle is not an undo step in Word 2016). Result now says "not an undo step"; needs a redeploy.
+VM run (2026-11-28): the rerun passed on build 6062bf20 (0.1.25): on/off read back, result ends `not an undo step (set it back with set_track_changes)`.
 Owner inbox (2026-11-28): "Turn track changes on/off".
 
 ### Review the suggested changes                        status: idea
@@ -224,7 +224,7 @@ Done when: a sitting accepts 2, rejects 1, skips 1, stops, and resumes later at 
 Owner inbox (2026-11-28): "let's review all of the suggested changes". Most valuable of the set for an academic.
 Design note (2026-11-28): easy on the Word side, hard on the sitting side. The tool owns the pointer (state file like sort-sessions.json); "קבל" always means the revision highlighted on screen, never one the model remembers. Per-item turns cost ~6 s each, so allow several answers in one turn ("קבל, דחה, קבל" for the next three, applied in order) and group answers ("כל השינויים של דני", "כל שינויי העיצוב") with a count confirmation. Stop and resume across days is expected, not an edge case.
 
-### Add a footnote                                      status: built (VM test pending)
+### Add a footnote                                      status: tested-vm
 Ask (Hebrew, as he would say it): "תוסיף הערת שוליים: ..."
 Also phrased as: "תוסיף הערת שוליים אחרי המילים X"
 What should happen: at the cursor, or after the words he names (Find within the paragraph under the cursor), `Footnotes.Add(Range, Text:=dictated)`. The dictated text is read back before inserting (STT errors in citations are likely); after inserting, the footnote number is spoken.
@@ -234,7 +234,7 @@ Spoken result: "הוספתי הערת שוליים 4, אפשר לבטל".
 Confirmation needed: before acting (the read-back).
 Seed data for the VM: a document with a few existing footnotes and a paragraph with a distinctive phrase.
 Done when: the footnote exists at the right place with the confirmed text and the right number; undo removes it.
-VM run (2026-11-28): placing at the cursor and after_words, numbering and not-found error passed, but undo needed 2 steps per footnote (Footnotes.Add is several undo steps). Fixed with one undo record per call; needs a redeploy and a rerun of case 5 + 6b.
+VM run (2026-11-28): the rerun passed on build 6062bf20 (0.1.25): footnote at the cursor and after_words each undone in one step.
 Owner inbox (2026-11-28): "Add a footnote".
 
 ### Insert a picture                                    status: idea
