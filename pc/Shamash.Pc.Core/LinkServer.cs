@@ -368,7 +368,8 @@ public sealed class LinkServer(ILoggerFactory loggerFactory, string url, string 
 }
 
 /// <summary>Runs <see cref="LinkServer"/> inside the Generic Host.</summary>
-public sealed class LinkHostedService(ILoggerFactory loggerFactory) : IHostedService
+/// <remarks><paramref name="desktop"/> comes from the Windows host (screen capture, UI Automation); null leaves those tools out.</remarks>
+public sealed class LinkHostedService(ILoggerFactory loggerFactory, DesktopServices? desktop = null) : IHostedService
 {
     private LinkServer? _server;
 
@@ -379,7 +380,7 @@ public sealed class LinkHostedService(ILoggerFactory loggerFactory) : IHostedSer
         settings.LogPresence(log);
         log.LogInformation("config: documentRoots={Count}", settings.DocumentRoots.Count);
         ServiceStatus.Instance.SetConfig(settings.Describe());
-        var pipeline = TurnPipeline.Create(settings, SharedHttp.Client, loggerFactory);
+        var pipeline = TurnPipeline.Create(settings, SharedHttp.Client, loggerFactory, desktop);
         var url = $"http://0.0.0.0:{LinkServer.PortFromEnvironment()}";
         _server = new LinkServer(loggerFactory, url, LinkServer.DefaultOutDir(), pipeline);
         try

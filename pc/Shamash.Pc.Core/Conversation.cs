@@ -133,10 +133,10 @@ public sealed class TurnPipeline(ISpeechToText stt, IReplyModel llm, ITextToSpee
         }
     }
 
-    public static TurnPipeline Create(ShamashSettings settings, HttpClient http, ILoggerFactory lf)
+    public static TurnPipeline Create(ShamashSettings settings, HttpClient http, ILoggerFactory lf, DesktopServices? desktop = null)
     {
         var log = lf.CreateLogger<TurnPipeline>();
-        var tools = BuildTools(settings);
+        var tools = BuildTools(settings, desktop, log);
         IReplyModel llm = settings.UseEchoLlm
             ? new EchoReplyModel()
             : new ClaudeReplyModel(settings.AnthropicApiKey, settings.ClaudeModel, tools, log);
@@ -147,8 +147,11 @@ public sealed class TurnPipeline(ISpeechToText stt, IReplyModel llm, ITextToSpee
             log, settings.AllowTextTurns, tools);
     }
 
-    /// <summary>The tools Claude may call, built from settings.</summary>
-    public static IReadOnlyList<IAgentTool> BuildTools(ShamashSettings settings) =>
+    /// <summary>
+    /// The tools Claude may call, built from settings. <paramref name="desktop"/> is the Windows host's screen capture and
+    /// UI Automation; without it the screen and window tools are left out (tests, other platforms).
+    /// </summary>
+    public static IReadOnlyList<IAgentTool> BuildTools(ShamashSettings settings, DesktopServices? desktop = null, ILogger? log = null) =>
     [
         new SearchDocumentsTool(settings.DocumentRoots),
         new ReadDocumentTool(settings.DocumentRoots),
@@ -162,7 +165,20 @@ public sealed class TurnPipeline(ISpeechToText stt, IReplyModel llm, ITextToSpee
         .. OrganizeStore.CreateTools(settings.DocumentRoots, null, settings.MaxOrganizeFiles),
         .. SortStore.CreateTools(settings.DocumentRoots, settings.MaxOrganizeFiles),
         new TranslateDocumentTool(settings.DocumentRoots, new ClaudeTranslator(settings.AnthropicApiKey, settings.TranslateModel ?? settings.ClaudeModel)),
+        new ReportMissingFeatureTool(desktop?.DataDir ?? HomeKey.DefaultDir(), log),
+        .. DesktopTools(desktop, log),
     ];
+
+    private static IEnumerable<IAgentTool> DesktopTools(DesktopServices? desktop, ILogger? log)
+    {
+        if (desktop is null) yield break;
+        yield return new LookAtScreenTool(desktop.Screen, desktop.Automation, desktop.DataDir, log);
+        yield return new ListWindowsTool(desktop.Automation);
+        yield return new DescribeWindowTool(desktop.Automation);
+        yield return new ClickControlTool(desktop.Automation);
+        yield return new CloseWindowTool(desktop.Automation);
+        yield return new PressKeyTool(desktop.Automation);
+    }
 
     public async Task<TurnResult> RunAsync(byte[] pcm, int sampleRate, ITurnSender sender, CancellationToken ct, string? text = null, bool noTts = false)
     {
@@ -314,7 +330,8 @@ public sealed class ClaudeReplyModel(string? apiKey, string model, IReadOnlyList
         "סידור תיקייה מבולגנת נעשה קובץ אחד בכל פעם: קרא ל-sort_folder_start, ואז לכל קובץ קרא ל-sort_folder_next, תאר אותו במשפט אחד (מה זה, לפי הקטע שחזר) והצע יעד אחד בלבד, בצורת שאלה, לפי הראיות שחזרו: אם יש עותק זהה בתיקייה אחרת הצע להעביר את זה לכפולים; אחרת אם יש גרסה דומה בתיקייה אחרת הצע את אותה תיקייה; אחרת התיקייה עם התוכן הדומה ביותר; ואם שום דבר לא מתאים, תיקייה חדשה. אם הוא אמר כן קרא ל-sort_folder_move, אם אמר לא או דלג קרא ל-sort_folder_skip, ואם אמר תחזיר קרא ל-undo_last_move. אחרי כל חמישה קבצים אמור כמה נשארו ושאל אם להמשיך, וכשהוא אומר שמספיק, עצור ואמור שאפשר להמשיך בפעם אחרת. " +
         "אתה יכול לתרגם מסמך לאנגלית או לעברית; התוצאה נשמרת כקובץ חדש ליד המקור, ואחרי התרגום אמור באיזו תיקייה הקובץ נמצא והצע לפתוח אותו. כשמבקשים לסגור מסמך קרא ל-close_document; אם הוא מדווח על שינויים שלא נשמרו, שאל בקול \"יש שינויים שלא נשמרו, לשמור?\" וקרא שוב עם save=yes אם אמר כן או save=no אם אמר לא. " +
         "יש לך גם כלים למייל ב-Outlook שלו: קרא הודעות אחרונות וסכם אותן במשפט, והכן טיוטת תשובה עם draft_reply. אחרי יצירת הטיוטה הקרא אותה בקול ושאל אם לשלוח, וקרא ל-send_draft רק אחרי שהוא אמר כן בבירור בתור הבא. לעולם אל תמחק הודעות. אם Outlook מציג חלון אבטחה משלו, אמור לו לאשר אותו על המסך. אם כלי מדווח על חלון של Office, אמור למשתמש בקצרה מה כתוב בו ואיזה כפתור ללחוץ. " +
-        "אם ביקשו ממך משהו שאף כלי עדיין לא יודע לעשות, אמור את זה בקצרה בעברית.";
+        "אם ביקשו ממך משהו שאף כלי לא יודע לעשות, קרא ל-report_missing_feature עם הבקשה במילים שלו, ואז אמור בקצרה שאת זה אתה עוד לא יודע לעשות ושהבקשה נרשמה. " +
+        "אם הוא מתאר משהו על המסך שהוא לא מבין (חלון שנפתח, שאלה שהמחשב שואל), או שכלי נכשל בלי סיבה ברורה, קרא ל-look_at_screen ואם צריך גם ל-describe_window, ואמור לו בפשטות מה יש על המסך ומה אפשר לעשות. כדי לצאת ממצב כזה עדיף לסגור את החלון (close_window) או ללחוץ על ביטול או לא, מאשר ללחוץ על אישור. אל תלחץ על כפתור שמאשר, מסכים, קונה, מוחק או שולח משהו בלי שהוא אמר כן בבירור. בכלי החלונות הכלליים (list_windows, describe_window, click_control, close_window, press_key) אתה משתמש רק במצבים לא צפויים, לא בשביל Word או Outlook שיש להם כלים משלהם.";
 
     public const int MaxTokens = 1024;
     public const int MaxHistoryTurns = 40;

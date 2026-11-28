@@ -47,7 +47,7 @@ public static class WindowNative
     private const uint WmGetText = 0x000D;
     private const uint SmtoAbortIfHung = 0x0002;
 
-    private static string ClassName(nint hwnd)
+    public static string ClassName(nint hwnd)
     {
         var sb = new StringBuilder(256);
         return GetClassNameW(hwnd, sb, sb.Capacity) > 0 ? sb.ToString() : "";
@@ -91,6 +91,14 @@ public static class WindowNative
         }, 0);
         return list;
     }
+
+    public static nint ForegroundWindow() => GetForegroundWindow();
+    public static bool IsMinimized(nint hwnd) => IsIconic(hwnd);
+
+    [DllImport("dwmapi.dll")] private static extern int DwmGetWindowAttribute(nint hwnd, int attr, out int value, int size);
+
+    /// <summary>Windows 10/11 keep hidden UWP windows alive with a title and the visible flag; DWM marks them cloaked.</summary>
+    public static bool IsCloaked(nint hwnd) => DwmGetWindowAttribute(hwnd, 14 /* DWMWA_CLOAKED */, out var cloaked, sizeof(int)) == 0 && cloaked != 0;
 
     /// <summary>Posts WM_CLOSE: the app decides, and may show its own "save changes?" prompt.</summary>
     public static bool RequestClose(nint hwnd) => PostMessageW(hwnd, 0x0010, 0, 0);
