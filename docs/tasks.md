@@ -307,6 +307,29 @@ Confirmation needed: none.
 Seed data for the VM: the seed documents from `tools/seed-docs/gen.py`, including the tracked-revisions docx.
 Done when: `tools/winvm/scenarios/run.sh` restores win11-office, installs the build, runs the scenarios and prints pass/fail; a COM-level script suite calls each Office tool directly.
 
+### Dial home: telemetry, turn records and logs         status: built (server deployed; uploads to verify on the VM)
+Ask (Hebrew, as he would say it): none; this is the owner's view of the deployment.
+What should happen: the PC registers with the owner's home server once (enrolment token, its own P-256 key), then sends a signed heartbeat every few minutes (version, health, turns and tokens today, last error) and uploads each finished turn record and the interesting log lines. The server keeps a year and shows a small web page per client: heartbeats, turns (transcript, reply, tool calls, usage), logs, and the list of requests the agent could not fulfil. The heartbeat reply can hold updates or ask for an immediate update check.
+Touches: `home/` (FastAPI + SQLite, image on GHCR), the fort compose stack on Athena, `HomeLink.cs`, `HomeUpload.cs`, the tray Status window.
+Must never: send his email address or file contents beyond what a turn record already holds; accept unsigned requests; expose the web UI without the household client certificate.
+Spoken result: none.
+Confirmation needed: none.
+Seed data for the VM: none; the VM registers as its own client.
+Done when: the client page on the home server shows the VM's heartbeats, a turn with its tool calls, log lines, and a `report_missing_feature` request; a hold set in the UI stops the VM's update checks.
+Owner decisions (2026-11-28): no Home Assistant monitoring, small web UI, transcript upload is fine, retention one year, registration by uploading the PC's own public key instead of mTLS.
+
+### Escape hatches: missing feature, look at the screen, generic windows   status: built (VM test pending)
+Ask (Hebrew, as he would say it): "תדפיס לי את המכתב" (no print tool yet); "נפתח לי פה משהו על המסך ואני לא יודע מה זה"; "תסגור את זה".
+Also phrased as: "מה זה החלון הזה?", "על מה ללחוץ?", "תוציא אותי מפה".
+What should happen: (1) a request no tool covers is recorded with `report_missing_feature` (local JSONL, visible on the home server's missing-features page) and he hears that this is not possible yet and was noted; (2) when he describes something on the screen he does not understand, or a tool fails for no clear reason, the agent takes a screenshot (`look_at_screen`, an image the model sees, about 1200 tokens) and reads the window's controls (`describe_window`) and tells him plainly what is there; (3) to get out, the agent prefers closing the window (`close_window`) or Cancel/No over Accept, and can press Escape or Enter and click a named button (`click_control`) through UI Automation.
+Touches: the whole desktop (read), any window (close, click); never Word/Outlook content, which have their own tools.
+Must never: type free text; click a button that agrees, consents, buys, deletes or sends without his clear yes; run programs; close Explorer or itself.
+Spoken result: "זה חלון של ... שנפתח; אפשר לסגור אותו, לסגור?" / "את זה אני עוד לא יודע לעשות, רשמתי את הבקשה".
+Confirmation needed: before any click other than close, cancel or no.
+Seed data for the VM: none; the scenario opens Windows Settings (and Copilot if the VM has it) as the "accidental" window.
+Done when: the VM scenarios pass: a print request records a missing feature; an accidentally opened Settings or Copilot window is described from a screenshot and closed on request; a Notepad unsaved-changes prompt is read back and answered.
+Owner test case (2026-11-28): he opened Copilot by accident, it showed a consent dialog, and he did not know what it was or what to click.
+
 <!-- Add tasks below. Printing, calendar, reading a PDF aloud, summarising a long document, dictating a letter, renaming files, finding a photo... -->
 
 ### Warn when the phone stops charging                  status: idea
@@ -346,6 +369,7 @@ These are facts about the target environment; none of the files themselves are i
 8. Email: last, after the mail client is known.
 9. Phone feedback (show transcript, level meter, hint).
 10. Regression harness for Office tools (before any editing tool).
+10a. Dial home (telemetry, turns, logs, update hold) and the escape hatches (missing feature, screenshot, generic windows): built, VM verification pending.
 11. Describe the open document and Undo the last edit (foundation).
 12. Small edits: Track changes on/off, Paragraph spacing, Add a footnote, Insert a special character.
 13. Review the suggested changes (the most valuable for an academic, after the harness matured).
