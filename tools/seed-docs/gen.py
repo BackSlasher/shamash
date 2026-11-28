@@ -372,6 +372,52 @@ add("תמונות/הכותל בחורף.png", png(240, 160, wall((120, 140, 170)
 add("תמונות/הכותל בקיץ.png", png(240, 160, wall((214, 170, 100), (240, 215, 160))), when_pic)
 add("תמונות/סבתא ברחובות.png", png(160, 240, lambda x, y, w, h: (96, 150, 96) if (x // 16 + y // 16) % 2 else (150, 200, 140)), when_pic)
 
+# ---- review target for the "review the suggested changes" tools: eight tracked changes by two authors, written as raw w:ins / w:del / w:rPrChange
+REV_AUTHORS = {"d": "דני לוי", "r": "רינה כהן"}
+REV_DATES = {"d": "2026-11-18T09:30:00Z", "r": "2026-11-19T16:10:00Z"}
+_rev_id = [100]
+
+def _rid():
+    _rev_id[0] += 1
+    return _rev_id[0]
+
+def _run(text): return f'<w:r><w:rPr><w:rtl/></w:rPr><w:t xml:space="preserve">{text}</w:t></w:r>'
+def _ins(who, text): return f'<w:ins w:id="{_rid()}" w:author="{REV_AUTHORS[who]}" w:date="{REV_DATES[who]}">{_run(text)}</w:ins>'
+def _del(who, text):
+    return (f'<w:del w:id="{_rid()}" w:author="{REV_AUTHORS[who]}" w:date="{REV_DATES[who]}"><w:r><w:rPr><w:rtl/></w:rPr>'
+            f'<w:delText xml:space="preserve">{text}</w:delText></w:r></w:del>')
+def _bold(who, text):
+    return (f'<w:r><w:rPr><w:b/><w:rtl/><w:rPrChange w:id="{_rid()}" w:author="{REV_AUTHORS[who]}" w:date="{REV_DATES[who]}"><w:rPr><w:rtl/></w:rPr></w:rPrChange></w:rPr>'
+            f'<w:t xml:space="preserve">{text}</w:t></w:r>')
+
+# (paragraph pieces) each piece is plain text or a tracked change; 8 changes: 4 insertions, 3 deletions, 1 formatting
+REV_PARAS = [
+ [_run("ירושלים בתקופה העות'מאנית "), _ins("d", "עברה "), _run("שינויים דמוגרפיים ומנהליים עמוקים מאז הכיבוש ב-1517.")],
+ [_run("הסולטאן סולימאן "), _del("d", "הגדול "), _run("בנה מחדש את חומות העיר, והן עומדות עד היום.")],
+ [_run("בתקופה המאוחרת גדלה האוכלוסייה היהודית, "), _ins("r", "ושכונות חדשות קמו מחוץ לחומות, "), _run("והעיר השתנתה.")],
+ [_run("הקונסוליות הזרות "), _bold("r", "שינו את מאזן הכוחות"), _run(" בעיר.")],
+ [_run("רשומות בתי הדין "), _del("r", "השרעיים הישנים "), _run("מספקות חומר עשיר על חיי היומיום.")],
+ [_run("מחקר חדש בארכיונים באיסטנבול "), _ins("d", "ללא ספק "), _run("מאפשר לבחון מחדש את מדיניות המסים.")],
+ [_run("הדוחות "), _del("d", "המפורטים "), _run("מעידים על גביית מסים כבדה.")],
+ [_run("לסיכום, "), _ins("r", "מדובר בנושא שראוי למחקר נוסף. "), _run("ירושלים העות'מאנית עדיין מסתתרת בארכיונים.")],
+]
+
+def build_review_docx(when):
+    from docx.oxml import parse_xml
+    d = Document()
+    d.core_properties.created = d.core_properties.modified = when
+    d.core_properties.author = "פרופ' כהן"
+    d.core_properties.title = "מאמר עם הערות עורך"
+    W = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"'
+    body = d.element.body
+    sect = body.sectPr
+    for pieces in REV_PARAS:
+        p = parse_xml(f'<w:p {W}><w:pPr><w:bidi/></w:pPr>{"".join(pieces)}</w:p>')
+        sect.addprevious(p)
+    b = io.BytesIO(); d.save(b); return b.getvalue()
+
+when_rev = ANCHOR - dt.timedelta(days=2)   # fixed, no rng
+add("מאמרים/מאמר עם הערות עורך.docx", build_review_docx(when_rev), when_rev)
 
 # ---- write
 # Clear the contents, not the directory itself: OUT is often a container mount point (rmtree fails with EBUSY).
