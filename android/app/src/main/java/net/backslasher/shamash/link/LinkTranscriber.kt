@@ -15,6 +15,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.withContext
 import net.backslasher.shamash.config.ShamashConfig
+import net.backslasher.shamash.core.BatteryReading
 import net.backslasher.shamash.pclink.PcLinkFrame
 import net.backslasher.shamash.transcribe.BatchResult
 import net.backslasher.shamash.transcribe.StreamingSession
@@ -50,6 +51,8 @@ class LinkTranscriber(
     private val sinkFactory: (sampleRate: Int) -> PcmSink = { AudioTrackSink(it) },
     private val device: String = Build.MODEL ?: "unknown",
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
+    /** Latest battery reading for the hello message; null when unknown. */
+    private val battery: () -> BatteryReading? = { null },
 ) : Transcriber, ReplyProvider {
 
     private sealed interface Event {
@@ -139,7 +142,7 @@ class LinkTranscriber(
             t.closeSocket()
             throw e
         }
-        if (!ws.send(LinkMessages.hello(device, config.sampleRate))) {
+        if (!ws.send(LinkMessages.hello(device, config.sampleRate, battery()))) {
             t.closeSocket()
             throw LinkNetworkException("Could not send hello")
         }

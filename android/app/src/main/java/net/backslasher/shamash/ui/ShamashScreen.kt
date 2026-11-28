@@ -44,6 +44,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import kotlinx.coroutines.withTimeoutOrNull
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDirection
 import androidx.compose.ui.unit.LayoutDirection
@@ -52,6 +53,7 @@ import androidx.compose.ui.unit.sp
 import kotlin.math.cos
 import kotlin.math.max
 import kotlin.math.sin
+import net.backslasher.shamash.core.ChargeState
 import net.backslasher.shamash.core.ErrorKind
 import net.backslasher.shamash.core.ScreenModel
 import net.backslasher.shamash.core.ShamashState
@@ -70,6 +72,8 @@ fun ShamashScreen(
     onMaintenanceUnlock: () -> Unit = {},
     /** Microphone level 0..1; read only in the draw phase of the listening meter. */
     level: () -> Float = { 0f },
+    /** Non-null while the phone has been unplugged past the grace period: a banner is drawn over everything. */
+    notCharging: ChargeState.NotCharging? = null,
 ) {
     val unlock by rememberUpdatedState(onMaintenanceUnlock)
     val tap by rememberUpdatedState(onTap)
@@ -165,6 +169,29 @@ fun ShamashScreen(
             } else if (model.state == ShamashState.WORKING) {
                 Hint("רגע...")
             }
+        }
+        if (notCharging != null) NotChargingBanner(notCharging)
+    }
+}
+
+/** Full-width yellow-on-black warning at the top. No pointer handling, so touches reach the press-to-talk surface below. */
+@Composable
+private fun BoxScope.NotChargingBanner(state: ChargeState.NotCharging) {
+    CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
+        Column(
+            Modifier
+                .align(Alignment.TopCenter)
+                .fillMaxWidth()
+                .background(Color(0xFFFFD600))
+                .padding(horizontal = 24.dp, vertical = 20.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            val dark = TextStyle(
+                color = Color.Black, fontSize = 44.sp, lineHeight = 52.sp, fontWeight = FontWeight.Bold,
+                textDirection = TextDirection.Rtl, textAlign = TextAlign.Center,
+            )
+            BasicText("הטלפון לא בטעינה, בדוק את הכבל", modifier = Modifier.fillMaxWidth(), style = dark)
+            BasicText("סוללה ${state.level}%", modifier = Modifier.fillMaxWidth().padding(top = 8.dp), style = dark)
         }
     }
 }

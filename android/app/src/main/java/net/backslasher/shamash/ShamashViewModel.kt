@@ -6,6 +6,8 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import java.io.File
 import net.backslasher.shamash.audio.AndroidCues
+import net.backslasher.shamash.audio.NotChargingWarning
+import net.backslasher.shamash.core.BatteryMonitor
 import net.backslasher.shamash.audio.AudioRecordCapture
 import net.backslasher.shamash.config.ShamashConfig
 import net.backslasher.shamash.core.SessionController
@@ -21,7 +23,15 @@ import okhttp3.OkHttpClient
 class ShamashViewModel(app: Application) : AndroidViewModel(app) {
     val config = ShamashConfig.DEFAULT
 
-    private val link: LinkTranscriber? = config.pcLinkUrl?.let { LinkTranscriber(it, OkHttpClient(), config) }
+    private val warning = NotChargingWarning(app)
+    private val battery = BatteryMonitor(app, viewModelScope, onWarn = warning::play)
+
+    /** Not charging for longer than the grace period; the screen shows the banner while it is not Ok. */
+    val charge = battery.charge
+
+    private val link: LinkTranscriber? = config.pcLinkUrl?.let {
+        LinkTranscriber(it, OkHttpClient(), config, battery = { battery.reading })
+    }
 
     init {
         Log.i("Shamash", if (link != null) "link: mode=pc url=${config.pcLinkUrl}" else "link: mode=standalone")
@@ -47,4 +57,8 @@ class ShamashViewModel(app: Application) : AndroidViewModel(app) {
             ElevenLabsSpeaker(BuildConfig.ELEVENLABS_KEY, config, OkHttpClient())
         },
     )
+
+    override fun onCleared() {
+        warning.stop()
+    }
 }

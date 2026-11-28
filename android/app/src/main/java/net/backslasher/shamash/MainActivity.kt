@@ -24,6 +24,7 @@ import net.backslasher.shamash.kiosk.ScreenKeeper
 import net.backslasher.shamash.config.ShamashConfig
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import net.backslasher.shamash.audio.AndroidCues
+import net.backslasher.shamash.core.ChargeState
 import net.backslasher.shamash.core.ErrorKind
 import net.backslasher.shamash.core.ScreenModel
 import net.backslasher.shamash.core.ShamashState
@@ -95,8 +96,10 @@ class MainActivity : ComponentActivity() {
                     "Microphone permission denied. Tap to ask again.", ErrorKind.MICROPHONE,
                 )
             }
+            val charge by viewModel.charge.collectAsStateWithLifecycle()
             ShamashScreen(
                 model = shown,
+                notCharging = charge as? ChargeState.NotCharging,
                 onTap = {
                     if (micGranted) controller.onTap() else micPermission.launch(Manifest.permission.RECORD_AUDIO)
                 },

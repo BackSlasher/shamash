@@ -7,6 +7,7 @@ import kotlinx.serialization.json.put
 import kotlinx.serialization.json.int
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import net.backslasher.shamash.core.BatteryReading
 import net.backslasher.shamash.transcribe.TranscriberError
 
 /** PC -> phone text messages of the conversation protocol (docs/link-protocol.md). */
@@ -38,11 +39,17 @@ object LinkMessages {
         LinkMessage.Unknown
     }
 
-    fun hello(device: String, sampleRate: Int): String = buildJsonObject {
+    fun hello(device: String, sampleRate: Int, battery: BatteryReading? = null): String = buildJsonObject {
         put("type", "hello")
         put("sampleRate", sampleRate)
         put("device", device)
         put("mode", "conversation")
+        if (battery != null) {
+            put("battery", buildJsonObject {
+                put("level", battery.level)
+                put("charging", battery.charging)
+            })
+        }
     }.toString()
 
     const val END = """{"type":"end"}"""

@@ -33,6 +33,11 @@ class LinkMessagesTest {
         assertEquals(LinkMessage.Unknown, LinkMessages.parse("""[1,2]"""))
     }
 
+    @Test fun helloCarriesBatteryWhenKnown() {
+        val h = LinkMessages.hello("Pixel 7", 16000, net.backslasher.shamash.core.BatteryReading(71, false))
+        assertEquals("""{"type":"hello","sampleRate":16000,"device":"Pixel 7","mode":"conversation","battery":{"level":71,"charging":false}}""", h)
+    }
+
     @Test fun helloJson() {
         val h = LinkMessages.hello("Pixel 7", 16000)
         assertEquals("""{"type":"hello","sampleRate":16000,"device":"Pixel 7","mode":"conversation"}""", h)
