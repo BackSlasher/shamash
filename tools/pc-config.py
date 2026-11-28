@@ -3,7 +3,8 @@
 
     tools/pc-config.py <output path> [--llm echo|claude]
 
-Keys taken from .env: ELEVENLABS_KEY, ANTHROPIC_API_KEY (optional). Nothing is echoed.
+Keys taken from .env: ELEVENLABS_KEY, ANTHROPIC_API_KEY (optional), SHAMASH_HOME_URL and
+SHAMASH_HOME_ENROL_TOKEN (optional, together). Nothing is echoed.
 """
 import json
 import os
@@ -31,8 +32,13 @@ if "--llm" in sys.argv:
 cfg = {"elevenLabsKey": env.get("ELEVENLABS_KEY", ""), "llm": llm}
 if env.get("ANTHROPIC_API_KEY"):
     cfg["anthropicApiKey"] = env["ANTHROPIC_API_KEY"]
+# Home link (docs/home-protocol.md): both or neither; a URL without a token cannot register.
+if env.get("SHAMASH_HOME_URL") and env.get("SHAMASH_HOME_ENROL_TOKEN"):
+    cfg["homeUrl"] = env["SHAMASH_HOME_URL"]
+    cfg["homeEnrolToken"] = env["SHAMASH_HOME_ENROL_TOKEN"]
 
 with open(out, "w", encoding="utf-8") as f:
     json.dump(cfg, f, indent=2)
 os.chmod(out, 0o600)
-print(f"wrote {out}: elevenLabsKey={bool(cfg['elevenLabsKey'])} anthropicApiKey={'anthropicApiKey' in cfg} llm={llm}")
+print(f"wrote {out}: elevenLabsKey={bool(cfg['elevenLabsKey'])} anthropicApiKey={'anthropicApiKey' in cfg} "
+      f"home={'homeUrl' in cfg} llm={llm}")
