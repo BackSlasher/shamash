@@ -5,11 +5,14 @@ started straight from ssh lives in session 0 and the tools would say "no documen
   tools/winvm/ssh.sh '& "\\host.lan\Data\harness\word-edit.ps1" -Path "C:\Users\shamash\Documents\מאמרים\מאמר על ירושלים - לעריכה.docx"'
   ... -SelectParagraph2   selects paragraph 2 instead (cursor variant "selection")
   ... -TrackOn            opens with track changes on
+  -Eval '<expr>'          instead of opening: runs the expression in the interactive session with $w (Word), $d (ActiveDocument) and $s (Selection) set, prints the result
 
 Prints one line: cursor paragraph, selection length, track changes. Copy the harness folder to ~/vm/shamash-win11/shared/harness/ first.
 #>
 param(
-    [Parameter(Mandatory)][string]$Path,
+    [string]$Path,
+    [string]$Eval,
+    [string]$EvalB64,
     [switch]$SelectParagraph2,
     [switch]$TrackOn,
     [switch]$Inner
@@ -22,7 +25,7 @@ if (-not $Inner) {
     Copy-Item -Force $PSCommandPath $local
     $out = Join-Path $env:TEMP 'word-edit-inner.out'
     Remove-Item -Force $out -ErrorAction SilentlyContinue
-    $args2 = "-NoProfile -ExecutionPolicy Bypass -File `"$local`" -Path `"$Path`" -Inner" + $(if ($SelectParagraph2) { ' -SelectParagraph2' }) + $(if ($TrackOn) { ' -TrackOn' })
+    $args2 = "-NoProfile -ExecutionPolicy Bypass -File `"$local`" -Path `"$Path`" -Inner" + $(if ($Eval) { ' -EvalB64 ' + [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($Eval)) }) + $(if ($SelectParagraph2) { ' -SelectParagraph2' }) + $(if ($TrackOn) { ' -TrackOn' })
     $action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument $args2
     $principal = New-ScheduledTaskPrincipal -UserId "$env:USERDOMAIN\$env:USERNAME" -LogonType Interactive
     Register-ScheduledTask -TaskName 'ShamashWordEdit' -Action $action -Principal $principal -Force | Out-Null
@@ -39,6 +42,12 @@ if (-not $Inner) {
 $out = Join-Path $env:TEMP 'word-edit-inner.out'
 try {
 try { $word = [Runtime.InteropServices.Marshal]::GetActiveObject('Word.Application') } catch { $word = New-Object -ComObject Word.Application }
+if ($EvalB64) {
+    $Eval = [Text.Encoding]::Unicode.GetString([Convert]::FromBase64String($EvalB64))
+    $w = $word; $d = $word.ActiveDocument; $s = $word.Selection
+    (Invoke-Expression $Eval | Out-String).Trim() | Set-Content -Encoding UTF8 $out
+    return
+}
 $word.Visible = $true
 $doc = $null
 foreach ($d in $word.Documents) { if ($d.FullName -eq $Path) { $doc = $d } }

@@ -17,17 +17,18 @@ tools/winvm/ssh.sh '& "\\host.lan\Data\harness\word-edit.ps1" -Path "$env:USERPR
 ```
 
 Add `-SelectParagraph2` to select paragraph 2 instead, `-TrackOn` to open with tracking on. Expected output: `opened: ...; cursor paragraph: 3; selected characters: 0; track changes: False`.
-Between cases that need a clean state, rerun the second line after closing Word (or press undo, see case 2).
+Between cases that need a clean state, close Word without saving and rerun both setup lines.
 
 ## Reading Word's state back
 
-`$w` below is the running Word as seen from ssh (the ROT is per session, so use the interactive task; this helper runs the read in it):
+Word's ROT entry is per logon session, so reads go through the same interactive task as the setup (`$w` Word, `$d` ActiveDocument, `$s` Selection):
 
 ```
-$q = 'try{$w=[Runtime.InteropServices.Marshal]::GetActiveObject("Word.Application");$d=$w.ActiveDocument;$s=$w.Selection;<EXPR>}catch{"ERROR "+$_}'
+tools/winvm/ssh.sh '& "\\host.lan\Data\harness\word-edit.ps1" -Eval "<expression>"'
+# the remote PowerShell expands $, so escape it: -Eval "`$d.Paragraphs.Item(3).LineSpacingRule"
 ```
 
-Simplest: take a screenshot (`tools/winvm/screenshot.sh`) and compare, or run the expression with `-Inner`-style task as in `word-edit.ps1`. The expressions to evaluate (each is `<EXPR>` above, run in the interactive session) are listed per case. Paragraph k = `$d.Paragraphs.Item(k)`.
+Paragraph k is `$d.Paragraphs.Item(k)`; the expressions to evaluate are in the last column below.
 
 ## Cases
 
