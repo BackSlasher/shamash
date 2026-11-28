@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Seed corpus for an elderly Hebrew-speaking academic (deterministic, ~60 files).
+"""Seed corpus for an elderly Hebrew-speaking academic (deterministic, ~65 files).
 
   podman run --rm -v tools/seed-docs:/src:Z -v ~/vm/shamash-win11/shared/seed:/out:Z docker.io/library/python:3.12 \
     sh -c 'apt-get update -qq && apt-get install -y -qq fonts-dejavu-core >/dev/null && \
@@ -327,6 +327,51 @@ def build_edit_docx(when):
 
 when_edit = ANCHOR - dt.timedelta(days=3)   # fixed, no rng: appending this file must not shift the seeds of the others
 add("מאמרים/מאמר על ירושלים - לעריכה.docx", build_edit_docx(when_edit), when_edit)
+
+# ---- copy-paragraph source: the document he names ("ירושלים בתקופה העות'מאנית"), numbered paragraphs with heavy formatting; two mention the sultan. Fixed text, no rng.
+COPY_PARAS = [
+ [("1. ", {}), ("מבוא: ", {"bold": True, "size": 16}), ("ירושלים בתקופה העות'מאנית כפי שהיא משתקפת במקורות המקומיים.", {})],
+ [("2. ", {}), ("הסולטאן סולימאן המפואר", {"bold": True, "italic": True, "color": (0xC0, 0x00, 0x00), "size": 14}), (" בנה מחדש את חומות העיר, והן עומדות עד היום ", {"underline": True}), ("סביב העיר העתיקה", {"highlight": True}), (".", {})],
+ [("3. ", {}), ("הקונסוליות הזרות שנפתחו באמצע המאה התשע עשרה שינו את מאזן הכוחות בעיר.", {"size": 11})],
+ [("4. ", {}), ("בימי הסולטאן עבדול חמיד", {"bold": True, "color": (0x1F, 0x3A, 0x93), "size": 13}), (" הוקמו שכונות חדשות מחוץ לחומות, ", {"italic": True}), ("והעיר התרחבה במהירות.", {"underline": True, "bold": True})],
+ [("5. ", {}), ("רשומות בתי הדין השרעיים מספקות חומר עשיר על מסחר ועל חיי היומיום.", {})],
+]
+
+def build_copy_source_docx(when):
+    from docx.shared import Pt, RGBColor
+    from docx.enum.text import WD_COLOR_INDEX
+    d = Document()
+    d.core_properties.created = d.core_properties.modified = when
+    d.core_properties.author = "פרופ' כהן"
+    d.core_properties.title = "ירושלים בתקופה העות'מאנית"
+    for runs in COPY_PARAS:
+        p = d.add_paragraph()
+        p._p.get_or_add_pPr().append(OxmlElement("w:bidi"))
+        for text, f in runs:
+            r = p.add_run(text)
+            r._r.get_or_add_rPr().append(OxmlElement("w:rtl"))
+            r.bold = f.get("bold"); r.italic = f.get("italic"); r.underline = f.get("underline")
+            if "size" in f: r.font.size = Pt(f["size"])
+            if "color" in f: r.font.color.rgb = RGBColor(*f["color"])
+            if f.get("highlight"): r.font.highlight_color = WD_COLOR_INDEX.YELLOW
+    b = io.BytesIO(); d.save(b); return b.getvalue()
+
+when_copy = ANCHOR - dt.timedelta(days=4)
+add("מאמרים/ירושלים בתקופה העות'מאנית.docx", build_copy_source_docx(when_copy), when_copy)
+
+# ---- pictures for "insert a picture": three small PNGs with Hebrew names (two with similar names), raw bytes, deterministic. The VM's Pictures folder must receive the תמונות folder.
+def png(w, h, color_at):
+    import zlib, struct
+    raw = b"".join(b"\x00" + b"".join(bytes(color_at(x, y, w, h)) for x in range(w)) for y in range(h))
+    def chunk(t, data): return struct.pack(">I", len(data)) + t + data + struct.pack(">I", zlib.crc32(t + data) & 0xFFFFFFFF)
+    return b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, 8, 2, 0, 0, 0)) + chunk(b"IDAT", zlib.compress(raw, 9)) + chunk(b"IEND", b"")
+def wall(base, stripe):   # a wall of stones: horizontal courses with a lighter joint line
+    return lambda x, y, w, h: stripe if y % 20 < 2 or (x + (y // 20) * 17) % 40 < 2 else base
+when_pic = ANCHOR - dt.timedelta(days=9)
+add("תמונות/הכותל בחורף.png", png(240, 160, wall((120, 140, 170), (200, 210, 225))), when_pic)
+add("תמונות/הכותל בקיץ.png", png(240, 160, wall((214, 170, 100), (240, 215, 160))), when_pic)
+add("תמונות/סבתא ברחובות.png", png(160, 240, lambda x, y, w, h: (96, 150, 96) if (x // 16 + y // 16) % 2 else (150, 200, 140)), when_pic)
+
 
 # ---- write
 # Clear the contents, not the directory itself: OUT is often a container mount point (rmtree fails with EBUSY).

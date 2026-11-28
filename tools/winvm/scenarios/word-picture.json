@@ -1,0 +1,62 @@
+{
+  "name": "word-picture",
+  "setup": [
+    "New-Item -Force -ItemType Directory \"$env:USERPROFILE\\Documents\\מאמרים\" | Out-Null; Copy-Item -Force \"\\\\host.lan\\Data\\seed\\מאמרים\\מאמר על ירושלים - לעריכה.docx\" \"$env:USERPROFILE\\Documents\\מאמרים\\\"",
+    "if (-not (Test-Path \"$env:USERPROFILE\\Pictures\\תמונות\\הכותל בחורף.png\")) { New-Item -Force -ItemType Directory \"$env:USERPROFILE\\Pictures\" | Out-Null; Copy-Item -Recurse -Force \"\\\\host.lan\\Data\\seed\\תמונות\" \"$env:USERPROFILE\\Pictures\\\"; Start-Sleep 75 }",
+    "(Get-FileHash \"$env:USERPROFILE\\Pictures\\תמונות\\הכותל בחורף.png\").Hash | Set-Content \"$env:TEMP\\picture.hash\"",
+    "& \"\\\\host.lan\\Data\\harness\\word-edit.ps1\" -Path \"$env:USERPROFILE\\Documents\\מאמרים\\מאמר על ירושלים - לעריכה.docx\""
+  ],
+  "turns": [
+    {
+      "say": "תכניס כאן את התמונה של הכותל",
+      "expect_tools": [
+        "search_documents"
+      ],
+      "forbid_tools": [
+        "insert_picture"
+      ],
+      "expect_result_prefix": {
+        "search_documents": "1. "
+      }
+    },
+    {
+      "say": "בחורף",
+      "expect_tools": [
+        "insert_picture"
+      ],
+      "expect_result_prefix": {
+        "insert_picture": "inserted picture \"הכותל בחורף.png\""
+      }
+    },
+    {
+      "say": "שהטקסט יזרום מסביב",
+      "expect_tools": [
+        "set_picture_wrap"
+      ],
+      "expect_result_prefix": {
+        "set_picture_wrap": "picture \"הכותל בחורף.png\" wrap: square"
+      }
+    },
+    {
+      "say": "תסגור את המסמך בלי לשמור",
+      "expect_tools": [
+        "close_document"
+      ]
+    }
+  ],
+  "expect_state": [
+    {
+      "ps": "(Get-Process WINWORD -ErrorAction SilentlyContinue | Measure-Object).Count",
+      "equals": "0"
+    },
+    {
+      "ps": "(Get-FileHash \"$env:USERPROFILE\\Pictures\\תמונות\\הכותל בחורף.png\").Hash -eq (Get-Content \"$env:TEMP\\picture.hash\")",
+      "equals": "True"
+    }
+  ],
+  "teardown": [
+    "Get-Process WINWORD -ErrorAction SilentlyContinue | ForEach-Object { $null = $_.CloseMainWindow() }",
+    "Remove-Item \"$env:USERPROFILE\\Documents\\מאמרים\\מאמר על ירושלים - לעריכה*.docx\" -ErrorAction SilentlyContinue",
+    "Remove-Item \"$env:TEMP\\picture.hash\" -ErrorAction SilentlyContinue"
+  ]
+}

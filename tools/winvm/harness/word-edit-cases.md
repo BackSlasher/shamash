@@ -64,3 +64,56 @@ Every result below also contains `document: מאמר על ירושלים - לע�
 - Case 5: where Word leaves the cursor and the view after `Footnotes.Add` (it may jump to the footnote pane in Draft view).
 - Case 3 with a `Heading`-style paragraph or inside the table: result must still read back.
 - Backups: `%LocalAppData%\Shamash\backups\<yyyyMMdd-HHmmss> מאמר על ירושלים - לעריכה.docx` exists after the first mutation, has the content from before it, and there is exactly one per service run. A second mutation adds no new file and no `backup:` note.
+
+## Copy paragraph
+
+Extra seed: `מאמרים/ירושלים בתקופה העות'מאנית.docx` (the source: 5 numbered paragraphs, all with run formatting; paragraphs 2 and 4 contain `הסולטאן`; paragraph 2 has a bold-italic red run, an underlined run and a yellow highlight). Copy it to `$env:USERPROFILE\Documents\מאמרים\`. Record its bytes first: `(Get-FileHash "$env:USERPROFILE\Documents\מאמרים\ירושלים בתקופה העות'מאנית.docx").Hash` (call it H0). The editing seed is open with the cursor in paragraph 3 (`word-edit.ps1`, setup above). `$src` below is the source document: `$w.Documents.Item("ירושלים בתקופה העות'מאנית.docx")`. Source arguments are `מאמרים/ירושלים בתקופה העות'מאנית.docx` (any form `search_documents` shows works; the indexer must know the file).
+
+| # | tool | JSON | result starts with | Word state to check |
+| --- | --- | --- | --- | --- |
+| 9 | `copy_paragraph_start` | `{"source":"מאמרים/ירושלים בתקופה העות'מאנית.docx","words":"סולטאן"}` | `candidate 1 of 2 in "ירושלים בתקופה העות'מאנית.docx": paragraph 2 starts "2. הסולטאן סולימאן המפואר בנה מחדש`... ending `; ask him "זאת?"` | `$w.ActiveDocument.Name` is the source; `$w.Selection.Range.Text` starts `2. הסולטאן`; `$w.Selection.Start` = `$src.Paragraphs.Item(2).Range.Start`; `$src.ReadOnly` True; `$src.Saved` True; file `%LocalAppData%\Shamash\copy-session.json` exists with `cursor` = the target cursor (paragraph 3 start + 10) |
+| 9b | `copy_paragraph_next` | `{"hint":"יותר למטה"}` | `candidate 2 of 2 in "ירושלים בתקופה העות'מאנית.docx": paragraph 4 starts "4. בימי הסולטאן` | selection is paragraph 4 of the source, source still in front |
+| 9c | `copy_paragraph_next` | `{}` | `no more candidates; ask him for other words or the paragraph number` | selection unchanged (still paragraph 4) |
+| 9d | `copy_paragraph_next` | `{"hint":"יותר למעלה"}` | `candidate 1 of 2 in` ... `paragraph 2 starts` | selection back on paragraph 2 |
+| 9e | `copy_paragraph_next` | `{"hint":"הפסקה עם הקונסוליות"}` | `candidate 1 of 1 in` ... `paragraph 3 starts "3. הקונסוליות` | selection is paragraph 3; the list is now just that one |
+| 10 | `copy_paragraph_confirm` (after 9d, paragraph 2 highlighted) | `{}` | `pasted paragraph 2 of "ירושלים בתקופה העות'מאנית.docx" into "מאמר על ירושלים - לעריכה.docx" at paragraph 3; document: מאמר על ירושלים - לעריכה.docx;` ... `; undo available` | `$d = $w.ActiveDocument` is the target; `$d.Paragraphs.Count` is 16. The cursor was 10 characters into paragraph 3, so the paste splits it: paragraph 3 reads `3. שלישית,2. הסולטאן סולימאן המפואר בנה...` and paragraph 4 starts `בתקופה העות'מאנית המאוחרת`. The pasted words keep their formatting: `$d.Range($d.Paragraphs.Item(3).Range.Start+13, $d.Paragraphs.Item(3).Range.Start+19).Font.Bold` -eq -1 and `.Italic` -eq -1 and `.Font.Color` is red (the run `הסולטאן`); `$w.Selection.Start` equals `$d.Paragraphs.Item(4).Range.Start`; the source is closed (`$w.Documents.Count` is 1); `Get-FileHash` of the source file = H0; `copy-session.json` is gone |
+| 10b | `copy_paragraph_confirm` after `copy_paragraph_start` with `paragraph_number` 2, `{"plain":true}` | | `pasted paragraph 2 of ... at paragraph 3 without formatting; document:` | same text as case 10 but no bold, italic or colour in the pasted range (`.Font.Bold` -eq 0, `.Font.Color` -eq -16777216), no underline or highlight |
+| 10c | `undo_last_edit` after 10 | `{}` | `undone: 1 step; document: מאמר על ירושלים - לעריכה.docx` | `$d.Paragraphs.Count` is back to 15 and paragraph 3 reads `3. שלישית`: ONE undo removes the whole paste (UndoRecord) |
+| 11 | `copy_paragraph_cancel` after a start | `{}` | `cancelled; back in "מאמר על ירושלים - לעריכה.docx", nothing was pasted` | the editing document is in front, source closed, `$d.Paragraphs.Count` 15, cursor where it was (paragraph 3), `copy-session.json` gone, source hash = H0 |
+| 11b | `copy_paragraph_cancel` with no copy in progress | `{}` | `no paragraph copy was in progress` | none |
+| 12 | `copy_paragraph_start` | `{"source":"מאמרים/ירושלים בתקופה העות'מאנית.docx","paragraph_number":9}` | `error: the document has 5 paragraphs; there is no paragraph 9` | the source is NOT left open (`$w.Documents.Count` is 1) |
+| 12b | `copy_paragraph_start` | `{"source":"מאמרים/ירושלים בתקופה העות'מאנית.docx","words":"פיל"}` | `error: no paragraph contains "פיל"` | same, no source left open |
+| 12c | `copy_paragraph_start` | `{"source":"מאמרים/מאמר על ירושלים - לעריכה.docx"}` | `error: the source is the document being edited; name another document` | nothing opened |
+| 12d | `copy_paragraph_start` | `{"source":"C:\\Windows\\win.ini"}` | `error: path not under a document root` | none |
+| 12e | `copy_paragraph_next` / `copy_paragraph_confirm` with no state | `{}` | `error: no paragraph copy is in progress; call copy_paragraph_start first` | none |
+| 13 | `copy_paragraph_start` with the source ALREADY open (user opened it), then `copy_paragraph_confirm` | `{"source":"...","paragraph_number":2}` | as 9 / 10 | after the confirm the source is STILL open (the tool did not open it) and not dirty |
+
+Things to look at, not assert: the highlight is visible in the source window after the call (the screenshot is the test); the Word window really comes to the front on a VM with several windows (`Activate`); whether `Range.Select()` scrolls the paragraph into view in a long source; how the paragraph split looks when the cursor is mid-paragraph (cases 10 and 10b paste at the cursor, so paragraph 3 is cut in two and the pasted text joins the first half; a cursor at a paragraph start or on an empty paragraph gives a clean paragraph, which is what he will normally have).
+
+## Picture
+
+Extra seed: the `תמונות` folder (`הכותל בחורף.png`, `הכותל בקיץ.png`, `סבתא ברחובות.png`, 240x160 or 160x240 pixels, no DPI chunk so Word shows them about 6.35 x 4.2 cm) copied to `$env:USERPROFILE\Pictures\` (so `Pictures\תמונות\...`); wait for the indexer (about 75 s). H1 = `(Get-FileHash "$env:USERPROFILE\Pictures\תמונות\הכותל בחורף.png").Hash` before the cases. Editing seed open, cursor in paragraph 3.
+
+| # | tool | JSON | result starts with | Word state to check |
+| --- | --- | --- | --- | --- |
+| 14 | `search_documents` | `{"query":"כותל","kind":"picture"}` | `1. ` with BOTH `הכותל בחורף.png` and `הכותל בקיץ.png` and the folder column `Pictures/תמונות` | none; with `kind` omitted the PNGs are not listed |
+| 14b | `search_documents` | `{"query":"סבתא","kind":"picture"}` | one line `סבתא ברחובות.png` | none |
+| 15 | `insert_picture` | `{"path":"Pictures/תמונות/הכותל בחורף.png"}` | `inserted picture "הכותל בחורף.png" (` ... `cm, wrap: inline) after paragraph 3 starting "3. שלישית, בתקופה`... `; document: מאמר על ירושלים - לעריכה.docx;` ... `; undo available` | `$d.InlineShapes.Count` is 1; `$d.Shapes.Count` is 0; the picture's range start is inside paragraph 3 (`$d.InlineShapes.Item(1).Range.Start` between paragraph 3's start and end); `$d.InlineShapes.Item(1).LinkFormat` is not used (embedded: `$d.InlineShapes.Item(1).Type` is 1, wdInlineShapePicture, not 4 linked); `Get-FileHash` = H1 |
+| 15b | `insert_picture` | `{"path":"תמונות/הכותל בקיץ.png","wrap":"square","width_cm":8}` | `inserted picture "הכותל בקיץ.png" (8x5.3 cm, wrap: square) after paragraph 3` | `$d.Shapes.Count` is 1, `$d.Shapes.Item(1).WrapFormat.Type` is 0, `.Width` is about 226.8 (8 cm), `.LockAspectRatio` is -1, `.Height` about 151.2 |
+| 15c | `insert_picture` | `{"path":"הכותל בחורף.png","wrap":"tight"}` / `"top_bottom"` | `... wrap: tight)` / `... wrap: top_bottom)` | `$d.Shapes.Item(1).WrapFormat.Type` is 1 / 4 |
+| 15d | `insert_picture` with `-SelectParagraph2` | `{"path":"תמונות/סבתא ברחובות.png"}` | `inserted picture "סבתא ברחובות.png"` ... `after paragraph 2` | the selected text of paragraph 2 is NOT replaced (paragraph 2 text unchanged except the picture before it); `$d.InlineShapes.Count` is 1 |
+| 15e | `insert_picture` | `{"path":"C:\\Windows\\Web\\Wallpaper\\Windows\\img0.jpg"}` | `error: path not under a document or picture folder` | none |
+| 15f | `insert_picture` | `{"path":"מאמרים/מאמר על ירושלים - לעריכה.docx"}` | `error: not a picture file` | none |
+| 15g | `insert_picture` | `{"path":"תמונות/אין.png"}` | `error: file not found` | none |
+| 16 | `resize_last_picture` after 15 | `{"width_cm":3}` | `picture "הכותל בחורף.png" resized to 3x2 cm (was ` | `$d.InlineShapes.Item(1).Width` about 85.05, height about 56.7 (proportions kept) |
+| 16b | `resize_last_picture` after 15b | `{"width_cm":4}` | `picture "הכותל בקיץ.png" resized to 4x2.7 cm` | `$d.Shapes.Item(1).Width` about 113.4 |
+| 16c | `resize_last_picture` with nothing inserted and nothing selected (fresh service, state file removed: `Remove-Item $env:LOCALAPPDATA\Shamash\picture-session.json`) | `{"width_cm":3}` | `error: no picture selected` | none |
+| 16d | `resize_last_picture` with a picture selected by the user (`-Eval '$d.InlineShapes.Item(1).Select()'`) and no session state | `{"width_cm":3}` | `picture "selected picture" resized to` | the selected picture is resized |
+| 17 | `set_picture_wrap` after 15 (inline) | `{"wrap":"square"}` | `picture "הכותל בחורף.png" wrap: square (was inline)` | `$d.InlineShapes.Count` is 0, `$d.Shapes.Count` is 1 with `.WrapFormat.Type` 0; the picture did not jump to another page (`$d.Shapes.Item(1).Anchor.Start` still in paragraph 3) |
+| 17b | `set_picture_wrap` after 17 | `{"wrap":"top_bottom"}` | `picture "הכותל בחורף.png" wrap: top_bottom (was square)` | `.WrapFormat.Type` is 4 |
+| 17c | `set_picture_wrap` after 17b | `{"wrap":"inline"}` | `picture "הכותל בחורף.png" wrap: inline (was top_bottom)` | `$d.Shapes.Count` is 0, `$d.InlineShapes.Count` is 1 |
+| 17d | `set_picture_wrap` twice with the same wrap | `{"wrap":"square"}` | second answer: `picture "..." already has wrap: square; document:` (no `undo available`) | no change |
+| 17e | `set_picture_wrap` with an invalid value | `{"wrap":"behind"}` | `error: wrap must be inline, square, tight or top_bottom` | none |
+| 18 | `undo_last_edit` after 15b (insert with wrap and width) | `{}` | `undone: 1 step` | the picture is gone: `$d.Shapes.Count` and `$d.InlineShapes.Count` both 0 (ONE undo for AddPicture + convert + size) |
+
+Things to look at, not assert: the exact size Word gives a PNG without DPI (the cm figures in cases 15 and 16 are estimates; read the first result and adjust); whether `ConvertToShape` leaves the picture where it was on the page; the behaviour of case 17 when the paragraph is near the bottom of a page.

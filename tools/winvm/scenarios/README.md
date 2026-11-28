@@ -89,6 +89,8 @@ One JSON file per scenario in this folder, run in file-name order:
 | `missing-feature` | "print the letter" (no tool does that): `report_missing_feature` is called; `missing-features.jsonl` has a fresh last line with a `request` |
 | `settings-escape` | Windows Settings opened on the interactive desktop (scheduled task); "a window opened, I don't know what it is" calls `look_at_screen` or `describe_window` and none of close/click/press; "close it" calls `close_window`; no `SystemSettings` process left |
 | `word-edit-basics` | copies the seed `מאמר על ירושלים - לעריכה.docx`, `tools/winvm/harness/word-edit.ps1` opens it with the cursor in paragraph 3; "what is open" -> `describe_active_document`, track changes on, 1.5 spacing, undo, close without saving; no Word left. Needs `tools/winvm/harness/` copied to `~/vm/shamash-win11/shared/harness/` and the seed docs in `shared/seed` |
+| `word-copy-paragraph` | the seed `ירושלים בתקופה העות'מאנית.docx` is the source, the editing seed is open (cursor in paragraph 3): "copy here the paragraph about the sultan" -> `search_documents` + `copy_paragraph_start`; "no, further down" -> `copy_paragraph_next`; "yes" -> `copy_paragraph_confirm`; close without saving; no Word left |
+| `word-picture` | `תמונות` copied into the Pictures folder: "insert the picture of the Kotel here" -> `search_documents` (kind picture), no `insert_picture` yet (two matches); "the winter one" -> `insert_picture`; "let the text flow around" -> `set_picture_wrap`; close without saving; no Word left |
 
 ## Opening a window on the interactive desktop
 

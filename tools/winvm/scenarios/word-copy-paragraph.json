@@ -1,0 +1,70 @@
+{
+  "name": "word-copy-paragraph",
+  "setup": [
+    "New-Item -Force -ItemType Directory \"$env:USERPROFILE\\Documents\\מאמרים\" | Out-Null; Copy-Item -Force \"\\\\host.lan\\Data\\seed\\מאמרים\\מאמר על ירושלים - לעריכה.docx\" \"$env:USERPROFILE\\Documents\\מאמרים\\\"",
+    "if (-not (Test-Path \"$env:USERPROFILE\\Documents\\מאמרים\\ירושלים בתקופה העות'מאנית.docx\")) { Copy-Item -Force \"\\\\host.lan\\Data\\seed\\מאמרים\\ירושלים בתקופה העות'מאנית.docx\" \"$env:USERPROFILE\\Documents\\מאמרים\\\"; Start-Sleep 75 }",
+    "(Get-FileHash \"$env:USERPROFILE\\Documents\\מאמרים\\ירושלים בתקופה העות'מאנית.docx\").Hash | Set-Content \"$env:TEMP\\copy-source.hash\"",
+    "& \"\\\\host.lan\\Data\\harness\\word-edit.ps1\" -Path \"$env:USERPROFILE\\Documents\\מאמרים\\מאמר על ירושלים - לעריכה.docx\""
+  ],
+  "turns": [
+    {
+      "say": "תעתיק לכאן את הפסקה על הסולטאן מהמסמך ירושלים בתקופה העות'מאנית",
+      "expect_tools": [
+        "search_documents",
+        "copy_paragraph_start"
+      ],
+      "forbid_tools": [
+        "copy_paragraph_confirm"
+      ],
+      "expect_result_prefix": {
+        "copy_paragraph_start": "candidate 1 of "
+      }
+    },
+    {
+      "say": "לא, יותר למטה",
+      "expect_tools": [
+        "copy_paragraph_next"
+      ],
+      "forbid_tools": [
+        "copy_paragraph_confirm"
+      ],
+      "expect_result_prefix": {
+        "copy_paragraph_next": "candidate 2 of "
+      }
+    },
+    {
+      "say": "כן",
+      "expect_tools": [
+        "copy_paragraph_confirm"
+      ],
+      "expect_result_prefix": {
+        "copy_paragraph_confirm": "pasted paragraph "
+      }
+    },
+    {
+      "say": "תסגור את המסמך בלי לשמור",
+      "expect_tools": [
+        "close_document"
+      ]
+    }
+  ],
+  "expect_state": [
+    {
+      "ps": "(Get-Process WINWORD -ErrorAction SilentlyContinue | Measure-Object).Count",
+      "equals": "0"
+    },
+    {
+      "ps": "(Get-FileHash \"$env:USERPROFILE\\Documents\\מאמרים\\ירושלים בתקופה העות'מאנית.docx\").Hash -eq (Get-Content \"$env:TEMP\\copy-source.hash\")",
+      "equals": "True"
+    },
+    {
+      "ps": "(Test-Path \"$env:LOCALAPPDATA\\Shamash\\copy-session.json\")",
+      "equals": "False"
+    }
+  ],
+  "teardown": [
+    "Get-Process WINWORD -ErrorAction SilentlyContinue | ForEach-Object { $null = $_.CloseMainWindow() }",
+    "Remove-Item \"$env:USERPROFILE\\Documents\\מאמרים\\מאמר על ירושלים - לעריכה*.docx\" -ErrorAction SilentlyContinue",
+    "Remove-Item \"$env:TEMP\\copy-source.hash\" -ErrorAction SilentlyContinue"
+  ]
+}
