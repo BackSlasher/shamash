@@ -1,5 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using Serilog;
 using Velopack;
 
@@ -52,6 +53,10 @@ internal static class Program
         {
             var builder = Host.CreateApplicationBuilder(args);
             builder.Services.AddSerilog();
+            builder.Services.AddSingleton(sp => new DesktopServices(
+                new WindowsScreenCapture(),
+                new UiaDesktopAutomation(sp.GetRequiredService<ILoggerFactory>().CreateLogger<UiaDesktopAutomation>()),
+                dataDir));
             builder.Services.AddHostedService<UpdateService>();
             builder.Services.AddHostedService<HeartbeatService>();
             builder.Services.AddHostedService<LinkHostedService>();
