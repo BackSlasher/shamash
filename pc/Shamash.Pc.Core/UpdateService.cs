@@ -34,7 +34,9 @@ public sealed class UpdateService(ILogger<UpdateService> log) : BackgroundServic
         var status = ServiceStatus.Instance;
         while (!stoppingToken.IsCancellationRequested)
         {
-            try
+            // The home server's hold stops every check, periodic or triggered.
+            if (UpdateControl.Instance.Hold) status.UpdateChecked("held by the home server");
+            else try
             {
                 var update = await mgr.CheckForUpdatesAsync();
                 if (update != null)

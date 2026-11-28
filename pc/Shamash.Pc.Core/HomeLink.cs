@@ -171,30 +171,42 @@ public sealed class HomeClient
         File.WriteAllText(_clientFile, JsonSerializer.Serialize(new { clientId = id, registeredAt = _clock().UtcDateTime.ToString("o") }));
     }
 
+    /// <summary>Signed heartbeat; see <see cref="PostSignedAsync"/> for the 401 handling.</summary>
+    public async Task<HeartbeatReply> HeartbeatAsync(HeartbeatBody hb, CancellationToken ct) =>
+        ParseReply(await PostSignedAsync("heartbeat", JsonSerializer.SerializeToUtf8Bytes(hb, Json), ct));
+
+    /// <summary>Signed <c>POST /api/turns</c>; returns on 200, throws otherwise.</summary>
+    public Task UploadTurnsAsync(IReadOnlyList<HomeTurn> turns, CancellationToken ct) =>
+        PostSignedAsync("turns", HomeUploadQueue.BuildBody(turns), ct);
+
+    /// <summary>Signed <c>POST /api/logs</c>; returns on 200, throws otherwise.</summary>
+    public Task UploadLogsAsync(IReadOnlyList<LogLine> lines, CancellationToken ct) =>
+        PostSignedAsync("logs", HomeLogUpload.BuildBody(lines), ct);
+
     /// <summary>
-    /// Signed heartbeat. A 401 carrying serverUnix (stale timestamp) sets the clock offset and is retried once at once;
-    /// any other 401 (unknown, revoked or bad signature) throws <see cref="HomeAuthException"/>.
+    /// Signed POST to api/<paramref name="endpoint"/>, returns the reply body. A 401 carrying serverUnix (stale timestamp)
+    /// sets the clock offset and is retried once at once; any other 401 (unknown, revoked or bad signature) throws
+    /// <see cref="HomeAuthException"/>.
     /// </summary>
-    public async Task<HeartbeatReply> HeartbeatAsync(HeartbeatBody hb, CancellationToken ct)
+    private async Task<byte[]> PostSignedAsync(string endpoint, byte[] body, CancellationToken ct)
     {
         if (ClientId is null) throw new InvalidOperationException("not registered");
-        var body = JsonSerializer.SerializeToUtf8Bytes(hb, Json);
         for (var attempt = 0; ; attempt++)
         {
-            using var req = new HttpRequestMessage(HttpMethod.Post, new Uri(BaseUri, "api/heartbeat")) { Content = JsonBody(body) };
+            using var req = new HttpRequestMessage(HttpMethod.Post, new Uri(BaseUri, "api/" + endpoint)) { Content = JsonBody(body) };
             foreach (var (k, v) in _key.SignHeaders(ClientId, body, _clock().AddSeconds(ClockOffsetSeconds))) req.Headers.TryAddWithoutValidation(k, v);
             using var resp = await _http.SendAsync(req, ct);
             if (resp.StatusCode == HttpStatusCode.Unauthorized)
             {
                 var serverUnix = ReadServerUnix(await resp.Content.ReadAsByteArrayAsync(ct));
-                if (serverUnix is null) throw new HomeAuthException("heartbeat refused (401)");
-                if (attempt > 0) throw new HomeClockException("heartbeat refused (401) even with the server clock applied");
+                if (serverUnix is null) throw new HomeAuthException($"{endpoint} refused (401)");
+                if (attempt > 0) throw new HomeClockException($"{endpoint} refused (401) even with the server clock applied");
                 ClockOffsetSeconds = serverUnix.Value - _clock().ToUnixTimeSeconds();
                 _log?.LogInformation("home: clock offset {Offset} s (server time used for signing)", ClockOffsetSeconds);
                 continue;
             }
             resp.EnsureSuccessStatusCode();
-            return ParseReply(await resp.Content.ReadAsByteArrayAsync(ct));
+            return await resp.Content.ReadAsByteArrayAsync(ct);
         }
     }
 
@@ -252,14 +264,27 @@ public sealed class HomeLinkService : BackgroundService
     private readonly ShamashSettings? _settings;
     private readonly HttpMessageHandler? _handler;
     private readonly string? _dir;
+    /// <summary>A turn is uploaded this long after it finishes (or at the next heartbeat, whichever comes first).</summary>
+    private static readonly TimeSpan TurnUploadDelay = TimeSpan.FromSeconds(10);
+    private readonly HomeUploadQueue _queue;
+    private readonly MemoryLogSink _logSink;
+    private readonly UpdateControl _control;
     private HomeClient? _client;
     private bool? _lastOk;
+    private bool? _lastUploadOk;
+    private DateTimeOffset _logsUploadedUntil = DateTimeOffset.MinValue;
 
-    public HomeLinkService(ILogger<HomeLinkService> log) => _log = log;
+    public HomeLinkService(ILogger<HomeLinkService> log)
+    {
+        _log = log; _queue = HomeUploadQueue.Instance; _logSink = MemoryLogSink.Instance; _control = UpdateControl.Instance;
+    }
 
-    public HomeLinkService(ILogger<HomeLinkService> log, ShamashSettings settings, HttpMessageHandler? handler, string dir)
+    /// <summary>Tests: own queue, log sink and update control unless given, so nothing is shared between tests.</summary>
+    public HomeLinkService(ILogger<HomeLinkService> log, ShamashSettings settings, HttpMessageHandler? handler, string dir,
+        HomeUploadQueue? queue = null, MemoryLogSink? logSink = null, UpdateControl? control = null)
     {
         _log = log; _settings = settings; _handler = handler; _dir = dir;
+        _queue = queue ?? new HomeUploadQueue(); _logSink = logSink ?? new MemoryLogSink(); _control = control ?? new UpdateControl();
     }
 
     protected override async Task ExecuteAsync(CancellationToken ct)
@@ -275,11 +300,25 @@ public sealed class HomeLinkService : BackgroundService
                 var ok = await TickAsync(settings, ct);
                 failures = ok ? 0 : failures + 1;
                 var delay = ok ? interval : TimeSpan.FromSeconds(Math.Min(MaxBackoff.TotalSeconds, 30 * Math.Pow(2, Math.Min(failures - 1, 10))));
-                try { await Task.Delay(delay, ct); } catch (OperationCanceledException) { return; }
+                try { await WaitForNextTickAsync(delay, ok, ct); } catch (OperationCanceledException) { return; }
             }
         }
         catch (OperationCanceledException) { }
         catch (Exception e) { _log.LogWarning("home: link stopped: {Error}", e.GetType().Name + ": " + e.Message); }
+    }
+
+    /// <summary>Sleeps until the next heartbeat; a finished turn uploads its batch ~10 s later instead of waiting for it.</summary>
+    private async Task WaitForNextTickAsync(TimeSpan delay, bool linkOk, CancellationToken ct)
+    {
+        var until = DateTime.UtcNow + delay;
+        while (DateTime.UtcNow < until)
+        {
+            if (!await _queue.WaitAsync(until - DateTime.UtcNow, ct)) return;
+            if (!linkOk) continue;  // the retry after backoff drains the queue
+            var pause = TimeSpan.FromTicks(Math.Min(TurnUploadDelay.Ticks, Math.Max(0, (until - DateTime.UtcNow).Ticks)));
+            await Task.Delay(pause, ct);
+            await UploadTurnsAsync(ct);
+        }
     }
 
     /// <summary>One registration-if-needed plus heartbeat. Never throws; returns success.</summary>
@@ -301,6 +340,8 @@ public sealed class HomeLinkService : BackgroundService
             }
             ServiceStatus.Instance.HomeReply(reply.DesiredVersion, reply.Hold);
             Changed(true, "home: heartbeat ok (desired {0}, hold {1})", reply.DesiredVersion ?? "-", reply.Hold);
+            Steer(reply);
+            await UploadAsync(ct);
             return true;
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested) { return false; }
@@ -309,6 +350,83 @@ public sealed class HomeLinkService : BackgroundService
             Changed(false, "home: link failed: {0}", e.GetType().Name + ": " + Scrub(e.Message, settings));
             return false;
         }
+    }
+
+    /// <summary>Applies the reply: hold flag, then the one-shot commands (the server sends each once).</summary>
+    private void Steer(HeartbeatReply reply)
+    {
+        _control.Hold = reply.Hold;
+        foreach (var cmd in reply.Commands)
+        {
+            switch (cmd.Type)
+            {
+                case "check_update":
+                    _log.LogInformation("home: command check_update");
+                    _control.TriggerCheck();
+                    break;
+                case "restart":
+                    // Velopack only restarts as part of applying an update; there is no plain restart path to call.
+                    _log.LogWarning("home: restart requested; not supported");
+                    break;
+                default:
+                    _log.LogInformation("home: ignoring unknown command {Type}", cmd.Type);
+                    break;
+            }
+        }
+    }
+
+    /// <summary>Right after a heartbeat: queued turns, then new log lines. Never throws; failures keep the data for the next try.</summary>
+    private async Task UploadAsync(CancellationToken ct)
+    {
+        await UploadTurnsAsync(ct);
+        await UploadLogsAsync(ct);
+    }
+
+    private async Task UploadTurnsAsync(CancellationToken ct)
+    {
+        if (_client?.ClientId is null) return;
+        var sent = false;
+        try
+        {
+            // Turns are queued in memory only: a restart loses the unsent ones, which is acceptable (the files stay on disk).
+            while (_queue.Peek() is { Count: > 0 } batch)
+            {
+                await _client.UploadTurnsAsync(batch, ct);
+                _queue.Remove(batch);
+                sent = true;
+            }
+            UploadChanged(true, "home: turn upload ok");
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { }
+        catch (Exception e) { UploadChanged(false, "home: turn upload failed ({0}), {1} queued", e.GetType().Name + ": " + e.Message, _queue.Count); }
+        ServiceStatus.Instance.HomeUpload(_queue.Count, sent);
+    }
+
+    private async Task UploadLogsAsync(CancellationToken ct)
+    {
+        if (_client?.ClientId is null) return;
+        try
+        {
+            while (true)
+            {
+                var lines = _logSink.Since(_logsUploadedUntil, HomeLogUpload.MaxLines);
+                if (lines.Length == 0) break;
+                var wanted = lines.Where(l => HomeLogUpload.Wants(l.Level, l.Message)).ToList();
+                if (wanted.Count > 0) await _client.UploadLogsAsync(wanted, ct);
+                _logsUploadedUntil = lines[^1].Time;
+                if (lines.Length < HomeLogUpload.MaxLines) break;
+            }
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { }
+        catch (Exception e) { UploadChanged(false, "home: log upload failed ({0})", e.GetType().Name + ": " + e.Message); }
+    }
+
+    private void UploadChanged(bool ok, string format, params object[] args)
+    {
+        if (_lastUploadOk == ok) return;
+        _lastUploadOk = ok;
+        var msg = string.Format(format, args);
+        if (ok) _log.LogInformation("{Message}", msg); else _log.LogWarning("{Message}", msg);
     }
 
     private async Task RegisterAsync(ShamashSettings settings, CancellationToken ct)

@@ -43,6 +43,14 @@ public sealed class ServiceStatus
     public DateTime? HomeLastContact { get; private set; }
     public string? HomeDesiredVersion { get; private set; }
     public bool HomeHold { get; private set; }
+    public int HomeQueuedTurns { get; private set; }
+    public DateTime? HomeLastUpload { get; private set; }
+
+    /// <summary>Turns still waiting for upload; <paramref name="uploaded"/> marks that something was just sent.</summary>
+    public void HomeUpload(int queuedTurns, bool uploaded)
+    {
+        lock (_lock) { HomeQueuedTurns = queuedTurns; if (uploaded) HomeLastUpload = DateTime.Now; }
+    }
 
     public void HomeReply(string? desiredVersion, bool hold)
     {
@@ -125,6 +133,12 @@ public sealed class ServiceStatus
     public void RequestUpdateCheck()
     {
         lock (_lock) { if (PendingUpdateVersion is not null) ApplyNowRequested = true; }
+        if (_checkNow.CurrentCount == 0) { try { _checkNow.Release(); } catch (SemaphoreFullException) { } }
+    }
+
+    /// <summary>Home server's check_update command: wakes the update loop without asking it to apply a pending update.</summary>
+    public void WakeUpdateLoop()
+    {
         if (_checkNow.CurrentCount == 0) { try { _checkNow.Release(); } catch (SemaphoreFullException) { } }
     }
 

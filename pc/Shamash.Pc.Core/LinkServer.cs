@@ -343,12 +343,14 @@ public sealed class LinkServer(ILoggerFactory loggerFactory, string url, string 
 
     private void SaveTurnJson(TurnResult r, DateTime stamp)
     {
+        var json = r.ToJson();
         try
         {
             Directory.CreateDirectory(outDir);
-            File.WriteAllText(TurnBaseName(stamp) + ".json", r.ToJson(), new UTF8Encoding(false));
+            File.WriteAllText(TurnBaseName(stamp) + ".json", json, new UTF8Encoding(false));
         }
         catch (Exception e) { _log.LogWarning(e, "link: could not write turn JSON to {Dir}", outDir); }
+        HomeUploadQueue.Instance.Enqueue(new HomeTurn(Path.GetFileName(TurnBaseName(stamp)), new DateTimeOffset(stamp).ToUniversalTime(), json));
     }
 
     private static bool TryParseJson(ReadOnlySpan<byte> utf8, out string? type, out JsonDocument? doc)
