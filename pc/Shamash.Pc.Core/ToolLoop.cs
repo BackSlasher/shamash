@@ -14,8 +14,23 @@ public interface IAgentTool
     Task<string> RunAsync(JsonElement input, CancellationToken ct);
 }
 
-/// <summary>One executed tool call, kept in the turn record.</summary>
-public sealed record ToolCallRecord(string Name, string Input, long Ms, int ResultChars, string ResultPrefix = "");
+/// <summary>An encoded picture a tool hands to the model (look_at_screen); Width and Height are the pixels of the encoded image.</summary>
+public sealed record ToolImage(byte[] Data, string MediaType, int Width, int Height);
+
+/// <summary>What a tool returns: the text, and optionally a picture the model gets to see next to it.</summary>
+public sealed record ToolResult(string Text, ToolImage? Image = null);
+
+/// <summary>
+/// A tool whose result can carry an image. Kept apart from <see cref="IAgentTool"/> so the many text-only tools stay
+/// untouched; <see cref="ToolLoop"/> prefers <see cref="RunRichAsync"/> and everything else (the link's direct tool message) uses RunAsync, the text part.
+/// </summary>
+public interface IRichAgentTool : IAgentTool
+{
+    Task<ToolResult> RunRichAsync(JsonElement input, CancellationToken ct);
+}
+
+/// <summary>One executed tool call, kept in the turn record. ImageBytes is the size of the picture sent to the model (0 when none).</summary>
+public sealed record ToolCallRecord(string Name, string Input, long Ms, int ResultChars, string ResultPrefix = "", int ImageBytes = 0);
 
 public sealed record ToolUseRequest(string Id, string Name, JsonElement Input);
 
@@ -61,7 +76,7 @@ public interface IToolConversation
     Task<ModelStep> NextAsync(bool withTools, CancellationToken ct);
 
     /// <summary>Appends the assistant turn of <paramref name="step"/> and a user turn holding one result per tool call.</summary>
-    void AddToolResults(ModelStep step, IReadOnlyList<(string Id, string Text)> results);
+    void AddToolResults(ModelStep step, IReadOnlyList<(string Id, ToolResult Result)> results);
 
     /// <summary>Appends a plain user turn (the nudge after an empty reply). Default: nothing, for conversations that need no history.</summary>
     void AddUserText(string text) { }
@@ -98,7 +113,7 @@ public static class ToolLoop
             UsageScope.Record(step.Usage);
             if (step.ToolUses.Count == 0 || tools.Count == 0) return step.Text;
 
-            var results = new List<(string, string)>();
+            var results = new List<(string, ToolResult)>();
             foreach (var use in step.ToolUses)
             {
                 ct.ThrowIfCancellationRequested();
@@ -113,22 +128,29 @@ public static class ToolLoop
         return last.Text;
     }
 
-    private static async Task<string> RunOneAsync(ToolUseRequest use, IReadOnlyList<IAgentTool> tools,
+    private static async Task<ToolResult> RunOneAsync(ToolUseRequest use, IReadOnlyList<IAgentTool> tools,
         List<ToolCallRecord> calls, ILogger? log, CancellationToken ct)
     {
         var sw = Stopwatch.StartNew();
-        string result;
+        ToolResult result;
         var tool = tools.FirstOrDefault(t => t.Name == use.Name);
-        if (tool is null) result = $"error: unknown tool {use.Name}";
+        if (tool is null) result = new ToolResult($"error: unknown tool {use.Name}");
         else
         {
-            try { result = await tool.RunAsync(use.Input, ct); }
+            try
+            {
+                result = tool is IRichAgentTool rich
+                    ? await rich.RunRichAsync(use.Input, ct)
+                    : new ToolResult(await tool.RunAsync(use.Input, ct));
+            }
             catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
-            catch (Exception e) { result = $"error: {e.GetType().Name}: {e.Message}"; }
+            catch (Exception e) { result = new ToolResult($"error: {e.GetType().Name}: {e.Message}"); }
         }
         var input = Compact(use.Input);
-        calls.Add(new ToolCallRecord(use.Name, input, sw.ElapsedMilliseconds, result.Length, result.Length <= 80 ? result : result[..80]));
-        log?.LogInformation("tool: {Name} {Input} -> {Chars} chars in {Ms} ms", use.Name, input, result.Length, sw.ElapsedMilliseconds);
+        var text = result.Text;
+        var imageBytes = result.Image?.Data.Length ?? 0;
+        calls.Add(new ToolCallRecord(use.Name, input, sw.ElapsedMilliseconds, text.Length, text.Length <= 80 ? text : text[..80], imageBytes));
+        log?.LogInformation("tool: {Name} {Input} -> {Chars} chars, {ImageBytes} image bytes in {Ms} ms", use.Name, input, text.Length, imageBytes, sw.ElapsedMilliseconds);
         return result;
     }
 

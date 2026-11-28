@@ -25,12 +25,17 @@ public class ToolLoopTests
         public int Calls;
         public readonly List<bool> WithToolsSeen = [];
         public readonly List<(string Id, string Text)> Fed = [];
+        public readonly List<(string Id, ToolResult Result)> FedResults = [];
         public Task<ModelStep> NextAsync(bool withTools, CancellationToken ct)
         {
             WithToolsSeen.Add(withTools);
             return Task.FromResult(next(Calls++, withTools));
         }
-        public void AddToolResults(ModelStep step, IReadOnlyList<(string Id, string Text)> results) => Fed.AddRange(results);
+        public void AddToolResults(ModelStep step, IReadOnlyList<(string Id, ToolResult Result)> results)
+        {
+            FedResults.AddRange(results);
+            Fed.AddRange(results.Select(r => (r.Id, r.Result.Text)));
+        }
     }
 
     private sealed class FuncTool(string name, Func<JsonElement, CancellationToken, Task<string>> f) : IAgentTool
@@ -39,6 +44,15 @@ public class ToolLoopTests
         public string Description => "d";
         public string InputSchema => """{"type":"object","properties":{}}""";
         public Task<string> RunAsync(JsonElement input, CancellationToken ct) => f(input, ct);
+    }
+
+    private sealed class PictureTool(ToolImage image) : IRichAgentTool
+    {
+        public string Name => "pic";
+        public string Description => "d";
+        public string InputSchema => """{"type":"object","properties":{}}""";
+        public Task<string> RunAsync(JsonElement input, CancellationToken ct) => Task.FromResult("see picture");
+        public Task<ToolResult> RunRichAsync(JsonElement input, CancellationToken ct) => Task.FromResult(new ToolResult("see picture", image));
     }
 
     private static ToolUseRequest Use(string id, string name, string json) => new(id, name, JsonDocument.Parse(json).RootElement.Clone());
@@ -96,6 +110,34 @@ public class ToolLoopTests
         var conv = new FakeConversation((_, _) => new ModelStep("", [Use("x", "t", "{}")]));
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => ToolLoop.RunAsync(conv, [tool], [], null, cts.Token));
         Assert.Equal(1, conv.Calls);
+    }
+
+    [Fact]
+    public async Task RichToolImageReachesConversation_AndIsRecorded()
+    {
+        var image = new ToolImage([1, 2, 3, 4, 5], "image/png", 10, 20);
+        var conv = new FakeConversation((i, _) => i == 0
+            ? new ModelStep("", [Use("t1", "pic", "{}"), Use("t2", "plain", "{}")])
+            : new ModelStep("done", []));
+        var calls = new List<ToolCallRecord>();
+        var plain = new FuncTool("plain", (_, _) => Task.FromResult("text only"));
+
+        await ToolLoop.RunAsync(conv, [new PictureTool(image), plain], calls, null, CancellationToken.None);
+
+        Assert.Same(image, conv.FedResults[0].Result.Image);
+        Assert.Equal("see picture", conv.FedResults[0].Result.Text);
+        Assert.Null(conv.FedResults[1].Result.Image);
+        Assert.Equal(5, calls[0].ImageBytes);
+        Assert.Equal(0, calls[1].ImageBytes);
+    }
+
+    [Fact]
+    public void TurnJson_CarriesImageBytes()
+    {
+        var r = new TurnResult();
+        r.ToolCalls.Add(new ToolCallRecord("look_at_screen", "{}", 5, 10, "x", 1234));
+        using var doc = JsonDocument.Parse(r.ToJson());
+        Assert.Equal(1234, doc.RootElement.GetProperty("toolCalls")[0].GetProperty("imageBytes").GetInt32());
     }
 }
 

@@ -398,7 +398,7 @@ public class ConversationTests
                 : new ModelStep("done", [], null, new LlmUsage(1, 3, 0, 100, 4));
             return Task.FromResult(step);
         }
-        public void AddToolResults(ModelStep step, IReadOnlyList<(string Id, string Text)> results) { }
+        public void AddToolResults(ModelStep step, IReadOnlyList<(string Id, ToolResult Result)> results) { }
     }
 
     private sealed class UsageLlm : IToolReplyModel
@@ -414,7 +414,7 @@ public class ConversationTests
         public List<bool> WithTools = [];
         public List<string> Nudges = [];
         public Task<ModelStep> NextAsync(bool withTools, CancellationToken ct) { WithTools.Add(withTools); return Task.FromResult(steps[Calls++]); }
-        public void AddToolResults(ModelStep step, IReadOnlyList<(string Id, string Text)> results) { }
+        public void AddToolResults(ModelStep step, IReadOnlyList<(string Id, ToolResult Result)> results) { }
         public void AddUserText(string text) => Nudges.Add(text);
     }
 
@@ -515,5 +515,34 @@ public class ConversationTests
         Assert.NotNull(sys.CacheControl);
         Assert.True(defs[1].TryPickTool(out var last) && last!.CacheControl is not null);
         Assert.True(defs[0].TryPickTool(out var first) && first!.CacheControl is null);
+    }
+
+    [Fact]
+    public void ToolResultWithImage_SerialisesToTextAndImageBlocks()
+    {
+        var image = new ToolImage([0x89, 0x50, 0x4E, 0x47], "image/png", 4, 4);
+        var json = JsonSerializer.Serialize(ClaudeReplyModel.BuildToolResult("t1", new ToolResult("screenshot 4x4", image)));
+        using var doc = JsonDocument.Parse(json);
+        var root = doc.RootElement;
+        Assert.Equal("t1", root.GetProperty("tool_use_id").GetString());
+        var content = root.GetProperty("content");
+        Assert.Equal(JsonValueKind.Array, content.ValueKind);
+        Assert.Equal(2, content.GetArrayLength());
+        Assert.Equal("text", content[0].GetProperty("type").GetString());
+        Assert.Equal("screenshot 4x4", content[0].GetProperty("text").GetString());
+        Assert.Equal("image", content[1].GetProperty("type").GetString());
+        var source = content[1].GetProperty("source");
+        Assert.Equal("base64", source.GetProperty("type").GetString());
+        Assert.Equal("image/png", source.GetProperty("media_type").GetString());
+        Assert.Equal(Convert.ToBase64String(image.Data), source.GetProperty("data").GetString());
+    }
+
+    [Fact]
+    public void ToolResultWithoutImage_StaysAPlainStringContent()
+    {
+        var json = JsonSerializer.Serialize(ClaudeReplyModel.BuildToolResult("t1", new ToolResult("error: nope")));
+        using var doc = JsonDocument.Parse(json);
+        Assert.Equal("error: nope", doc.RootElement.GetProperty("content").GetString());
+        Assert.True(doc.RootElement.GetProperty("is_error").GetBoolean());
     }
 }

@@ -94,7 +94,7 @@ public sealed class TurnResult
         timingsMs = new { stt = SttMs, llm = LlmMs, ttsFirstByte = TtsFirstByteMs, ttsTotal = TtsTotalMs, total = TotalMs },
         ttsBytes = TtsBytes,
         error = ErrorStage is null ? null : new { stage = ErrorStage, message = ErrorMessage },
-        toolCalls = ToolCalls.Select(c => new { name = c.Name, input = c.Input, ms = c.Ms, resultChars = c.ResultChars, resultPrefix = c.ResultPrefix }),
+        toolCalls = ToolCalls.Select(c => new { name = c.Name, input = c.Input, ms = c.Ms, resultChars = c.ResultChars, resultPrefix = c.ResultPrefix, imageBytes = c.ImageBytes }),
         usage = new { calls = Usage.Calls, input = Usage.Input, cacheWrite = Usage.CacheWrite, cacheRead = Usage.CacheRead, output = Usage.Output },
         cancelledAt = CancelledAt,
         done = Done,
@@ -374,6 +374,28 @@ public sealed class ClaudeReplyModel(string? apiKey, string model, IReadOnlyList
         return p;
     }
 
+    /// <summary>A tool_result block: plain text, or (with a picture) a content list of a text block and a base64 image block.</summary>
+    public static ToolResultBlockParam BuildToolResult(string id, ToolResult result)
+    {
+        var isError = result.Text.StartsWith("error:", StringComparison.Ordinal);
+        if (result.Image is not { } img)
+            return new ToolResultBlockParam { ToolUseID = id, Content = result.Text, IsError = isError };
+        var blocks = new List<Block>
+        {
+            new TextBlockParam { Text = result.Text },
+            new ImageBlockParam { Source = new Base64ImageSource { Data = Convert.ToBase64String(img.Data), MediaType = ImageMediaType(img.MediaType) } },
+        };
+        return new ToolResultBlockParam { ToolUseID = id, Content = blocks, IsError = isError };
+    }
+
+    private static MediaType ImageMediaType(string mediaType) => mediaType switch
+    {
+        "image/jpeg" => MediaType.ImageJpeg,
+        "image/gif" => MediaType.ImageGif,
+        "image/webp" => MediaType.ImageWebP,
+        _ => MediaType.ImagePng,
+    };
+
     /// <summary>The Anthropic SDK side of the tool loop: Messages.Create, content echo, tool_result turns.</summary>
     private sealed class SdkConversation(AnthropicClient client, string model, IReadOnlyList<IAgentTool> tools, List<MessageParam> messages) : IToolConversation
     {
@@ -400,7 +422,7 @@ public sealed class ClaudeReplyModel(string? apiKey, string model, IReadOnlyList
 
         public void AddUserText(string text) => messages.Add(new UserMessageParam { Content = text });
 
-        public void AddToolResults(ModelStep step, IReadOnlyList<(string Id, string Text)> results)
+        public void AddToolResults(ModelStep step, IReadOnlyList<(string Id, ToolResult Result)> results)
         {
             // No ToParam helper in the SDK: rebuild each content block as its *Param twin. Thinking signatures must be kept.
             var assistant = new List<ContentBlockParam>();
@@ -419,8 +441,8 @@ public sealed class ClaudeReplyModel(string? apiKey, string model, IReadOnlyList
             }
             messages.Add(new AssistantMessageParam { Content = assistant });
             var toolResults = new List<ContentBlockParam>();
-            foreach (var (id, text) in results)
-                toolResults.Add(new ToolResultBlockParam { ToolUseID = id, Content = text, IsError = text.StartsWith("error:", StringComparison.Ordinal) });
+            foreach (var (id, result) in results)
+                toolResults.Add(BuildToolResult(id, result));
             messages.Add(new UserMessageParam { Content = toolResults });
         }
 
