@@ -117,3 +117,71 @@ Extra seed: the `תמונות` folder (`הכותל בחורף.png`, `הכותל 
 | 18 | `undo_last_edit` after 15b (insert with wrap and width) | `{}` | `undone: 1 step` | the picture is gone: `$d.Shapes.Count` and `$d.InlineShapes.Count` both 0 (ONE undo for AddPicture + convert + size) |
 
 Things to look at, not assert: the exact size Word gives a PNG without DPI (the cm figures in cases 15 and 16 are estimates; read the first result and adjust); whether `ConvertToShape` leaves the picture where it was on the page; the behaviour of case 17 when the paragraph is near the bottom of a page.
+## Review (tracked changes)
+
+Built, not yet verified. Seed: `מאמרים/מאמר עם הערות עורך.docx` (8 revisions: דני לוי has 2 insertions and 2 deletions, רינה כהן 2 insertions, 1 deletion and 1 formatting change; 8 numbered-less paragraphs, the revisions are one per paragraph in order). Copy and open it like the editing seed (`-Path` with this file; the script also sets tracking off):
+
+```
+tools/winvm/ssh.sh 'Copy-Item -Force "\\host.lan\Data\seed\מאמרים\מאמר עם הערות עורך.docx" "$env:USERPROFILE\Documents\מאמרים\"'
+tools/winvm/ssh.sh '& "\\host.lan\Data\harness\word-edit.ps1" -Path "$env:USERPROFILE\Documents\מאמרים\מאמר עם הערות עורך.docx"'
+```
+
+State checks are `-Eval` calls as above (`$d.Revisions.Count`, `$s.Text`). Restart the PC service (or delete `%LocalAppData%\Shamash\review-sessions.json` while it is stopped) before the first case, so no session from an earlier run exists. Dates in `next` come from the file (2026-11-18 and 2026-11-19) and may read one day off with the VM's time zone.
+
+| # | tool | JSON | result starts with | Word state to check |
+| --- | --- | --- | --- | --- |
+| R1 | `review_changes_start` | `{}` | `review started: 8 changes (insertion 4, deletion 3, formatting 1); document: מאמר עם הערות עורך.docx; call review_changes_next` | `$d.Revisions.Count` = 8 |
+| R2 | `review_changes_next` | `{}` | `revision 1 of 8: insertion by דני לוי (2026-11-18): "…` and contains `[עברה]` and ends `; answer with review_changes_answer; document: מאמר עם הערות עורך.docx` | the inserted word is highlighted on screen: `$s.Text` = `עברה ` (with its trailing space); `$d.Saved` stays True |
+| R2b | `review_changes_next` again | `{}` | the same line as R2 | `$s.Text` unchanged |
+| R3 | `review_changes_answer` | `{"answers":["accept","reject","skip"]}` | `accepted; rejected; skipped; remaining 6, next: revision 4 of 8: formatting by רינה כהן` and ends `; document: מאמר עם הערות עורך.docx; backup: ` ... `; undo available` (the backup note is there only if no earlier case of this run mutated the document) | `$d.Revisions.Count` = 6; paragraph 1 has no revision on `עברה` but still contains it; paragraph 2 still contains `הגדול` (rejected deletion); paragraph 3 still has its insertion; `$s.Text` is the bold-formatted phrase `שינו את מאזן הכוחות` |
+| R3b | `review_changes_answer` with a wrong word | `{"answers":["maybe"]}` | `error: answers must be accept, reject or skip (got 'maybe')` | nothing changes |
+| R4 | `review_changes_status` | `{}` | `review: session since ` ... `; revisions in the document: 6; accepted 1, rejected 1, skipped 1, remaining 6; document:` | none |
+| R5 | resume: `-Eval "`$d.Save()"`, `-Eval "`$d.Close()"`, reopen with the setup line, then `review_changes_start` | `{}` | `review resumed (started ` ... `) at the next unanswered change: accepted 1, rejected 1, skipped 1, remaining 6; document:` | then `review_changes_next` gives `revision 4 of 8: formatting by רינה כהן` (not revision 1) |
+| R6 | `accept_all_changes` (wrong count) | `{"author":"דני","confirmed_count":1}` | `error: 2 changes match by דני, confirm with confirmed_count 2; document:` | `$d.Revisions.Count` still 6 |
+| R6b | `accept_all_changes` (no count) | `{"author":"דני"}` | the same error | still 6 |
+| R7 | `accept_all_changes` (right count) | `{"author":"דני","confirmed_count":2}` | `accepted 2 changes by דני; 4 left in the document; document:` ... `; undo available` | `$d.Revisions.Count` = 4; no revision by דני לוי remains: `($d.Revisions | ? { $_.Author -like "*דני*" }).Count` is 0 |
+| R8 | `reject_all_changes` | `{"type":"formatting","confirmed_count":1}` | `rejected 1 change of type formatting; 3 left in the document` | `$d.Revisions.Count` = 3; `$d.Paragraphs.Item(4).Range.Font.Bold` = 0 |
+| R9 | `review_changes_next` | `{}` | `revision 5 of 8: deletion by רינה כהן` | the deleted words are selected |
+| R10 | `review_changes_answer` | `{"answers":["accept","accept"]}` | `accepted; accepted; remaining 1, next: revision 3 of 8: insertion by רינה כהן` ... `; revisiting the skipped ones` | `$d.Revisions.Count` = 1 |
+| R11 | `review_changes_answer` | `{"answers":["reject"]}` | `rejected; all answered or skipped; document:` ... `; undo available` | `$d.Revisions.Count` = 0; paragraph 3 no longer contains `ושכונות חדשות קמו מחוץ לחומות` |
+| R12 | `review_changes_status` | `{}` | `review: session since ` ... `accepted 5, rejected 3, skipped 0, remaining 0` | none |
+| R13 | `undo_last_edit` then `review_changes_start` | `{}` then `{}` | `undone: 1 step` then `review resumed` ... `remaining 1` (the rejected insertion came back, its item is pending again) | `$d.Revisions.Count` = 1 |
+| R14 | `review_changes_start` on a document with no revisions (open the editing seed) | `{}` | `no tracked changes in this document; document: מאמר על ירושלים - לעריכה.docx` | none |
+| R15 | any review tool with Word closed | `{}` | `error: no document is open in Word` | Word is NOT started |
+
+R12 counts: items 1, 5, 6, 7, 8 were accepted (R3, R10, R7), items 2, 3, 4 rejected (R3, R11, R8); R7 and R8 turn the items they removed into accepted and rejected through the session, not through `review_changes_answer`.
+
+## Recovery pane
+
+Built, not yet verified. Needs a REAL Word crash, so this runs by hand, never inside a scenario (the clean-desktop step of `check.py` never kills a Word that has a window; this section does, once). Copy the editing seed to a throwaway name and open it with `word-edit.ps1 -Path`.
+
+Provoke the pane:
+
+```
+# AutoRecover every minute for this Word, a keystroke so the document is dirty
+tools/winvm/ssh.sh '& "\\host.lan\Data\harness\word-edit.ps1" -Eval "`$w.Options.SaveInterval = 1; `$w.Options.DefaultFilePath(5)"'      # prints the AutoRecover folder
+tools/winvm/ssh.sh '& "\\host.lan\Data\harness\word-edit.ps1" -Eval "`$s.TypeText(''x'')"'
+# wait ~90 s, then look for the autosaved file (the folder printed above)
+tools/winvm/ssh.sh 'Get-ChildItem "$env:APPDATA\Microsoft\Word" -Filter *.asd | Select Name, LastWriteTime'
+# the one place Word is killed: this harness step only (it may wedge ssh, see tools/winvm/README.md; reconnect if so)
+tools/winvm/ssh.sh 'Stop-Process -Name WINWORD -Force'
+# start Word normally in the interactive session (a COM-started Word does not show the pane)
+tools/winvm/ssh.sh 'schtasks /Create /TN shamash-test-open /TR "winword.exe" /SC ONCE /ST 00:00 /F | Out-Null; schtasks /Run /TN shamash-test-open | Out-Null; Start-Sleep 8'
+```
+
+Word starts with an empty `Document1` and the Document Recovery pane on the side. Then:
+
+| # | tool | JSON | result | check |
+| --- | --- | --- | --- | --- |
+| C1 | `describe_office_dialogs` | `{}` | `no Office dialogs are open; recovery pane shown` | the pane is on screen (`tools/winvm/screenshot.sh`) |
+| C2 | `describe_active_document` | `{}` | ends `; recovery pane shown` | none |
+| C3 | `word_recovery` | `{"action":"check"}` | `recovery pane: shown; autosaved files: N (newest "<name>.asd", <today HH:mm>)` with N at least 1 | the folder listing above agrees |
+| C4 | `word_recovery` | `{"action":"open"}` | `opened the autosaved file "<name>.asd" (...) as a new document "..."; the original and the recovered version are both open; the autosaved file was not changed` | `$w.Documents.Count` = 2 (or more); the recovered one contains the typed `x`; nothing was overwritten; if Word refuses (the file is in use) the result is `error: Office call failed ...`, which is also worth reporting |
+| C5 | `word_recovery` | `{"action":"close"}` | `recovery pane closed (UI Automation); verified: not shown; autosaved files left untouched: N` | the pane is gone from the screenshot; the `.asd` files are all still there |
+| C6 | `word_recovery` | `{"action":"check"}` | `recovery pane: not shown; autosaved files: N` | none |
+| C7 | `word_recovery` | `{"action":"close"}` | `recovery pane: not shown; nothing to close; autosaved files: N` | no click happens |
+| C8 | `describe_office_dialogs` | `{}` | `no Office dialogs are open` (no recovery note) | none |
+
+If C5 says `closed (CommandBars)` the UI Automation click did not work and `DocumentRecoveryClose` exists; if it says `error: the recovery pane is still shown (...)`, copy the part in parentheses: `the first Close button belongs to Word's own window` means the title-bar Close comes before the pane in the control order (nothing was clicked), `the recovery pane was not found in the window` or `the list of controls was cut short` means the pane is not reached by the UI Automation walk. Also report C1 and C3 if the pane IS on screen but they say `not shown` (the pane's name is not what the code looks for): then run `describe_window` on the Word window and paste its element list.
+
+Afterwards: close the recovered documents without saving, `-Eval "`$w.Options.SaveInterval = 10"`, and delete the test `.asd` files by hand (the tools never do).

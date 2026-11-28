@@ -1,0 +1,67 @@
+{
+  "name": "word-review",
+  "setup": [
+    "New-Item -Force -ItemType Directory \"$env:USERPROFILE\\Documents\\מאמרים\" | Out-Null; Copy-Item -Force \"\\\\host.lan\\Data\\seed\\מאמרים\\מאמר עם הערות עורך.docx\" \"$env:USERPROFILE\\Documents\\מאמרים\\\"",
+    "& \"\\\\host.lan\\Data\\harness\\word-edit.ps1\" -Path \"$env:USERPROFILE\\Documents\\מאמרים\\מאמר עם הערות עורך.docx\""
+  ],
+  "turns": [
+    {
+      "say": "בוא נעבור על השינויים המוצעים",
+      "expect_tools": [
+        "review_changes_start",
+        "review_changes_next"
+      ],
+      "forbid_tools": [
+        "accept_all_changes",
+        "reject_all_changes",
+        "review_changes_answer"
+      ],
+      "expect_result_prefix": {
+        "review_changes_next": "revision 1 of "
+      }
+    },
+    {
+      "say": "קבל",
+      "expect_tools": [
+        "review_changes_answer"
+      ],
+      "expect_result_prefix": {
+        "review_changes_answer": "accepted; "
+      }
+    },
+    {
+      "say": "דחה, דלג",
+      "expect_tools": [
+        "review_changes_answer"
+      ],
+      "expect_result_prefix": {
+        "review_changes_answer": "rejected; skipped; "
+      }
+    },
+    {
+      "say": "מספיק להיום",
+      "forbid_tools": [
+        "review_changes_answer",
+        "accept_all_changes",
+        "reject_all_changes",
+        "undo_last_edit"
+      ]
+    },
+    {
+      "say": "תסגור את המסמך בלי לשמור",
+      "expect_tools": [
+        "close_document"
+      ]
+    }
+  ],
+  "expect_state": [
+    {
+      "ps": "(Get-Process WINWORD -ErrorAction SilentlyContinue | Measure-Object).Count",
+      "equals": "0"
+    }
+  ],
+  "teardown": [
+    "Get-Process WINWORD -ErrorAction SilentlyContinue | ForEach-Object { $null = $_.CloseMainWindow() }",
+    "Remove-Item \"$env:USERPROFILE\\Documents\\מאמרים\\מאמר עם הערות עורך*.docx\" -ErrorAction SilentlyContinue"
+  ]
+}
