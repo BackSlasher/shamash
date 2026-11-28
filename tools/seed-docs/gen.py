@@ -275,6 +275,59 @@ doc("Desktop stuff/Reading list.docx", "en", "Reading list", "meth", 2, 40)
 doc("משפחה/זכרונות מהילדות בירושלים.docx", "he", "זכרונות מהילדות", "trav", 3, 600)
 doc("הרצאות/הרצאה לגמלאים - מסעות עולי רגל.docx", "he", "מסעות עולי רגל", "trav", 3, 75)
 
+
+# ---- editing target for the Word editing tools: six numbered paragraphs, two footnotes, a table (hand-built footnotes part: python-docx has none)
+EDIT_PARAS = [
+ "1. ראשית, ירושלים בתקופה העות'מאנית עברה שינויים דמוגרפיים ומנהליים עמוקים מאז הכיבוש ב-1517.",
+ "2. שנית, הסולטאן סולימאן המפואר בנה מחדש את חומות העיר, והן עומדות עד היום סביב העיר העתיקה.",
+ "3. שלישית, בתקופה העות'מאנית המאוחרת גדלה האוכלוסייה היהודית, ושכונות חדשות קמו מחוץ לחומות.",
+ "4. רביעית, הקונסוליות הזרות שנפתחו באמצע המאה התשע עשרה שינו את מאזן הכוחות בעיר.",
+ "5. חמישית, רשומות בתי הדין השרעיים מספקות חומר עשיר על חיי היומיום ועל מסחר בעיר.",
+ "6. לבסוף, מחקר חדש בארכיונים באיסטנבול מאפשר לבחון מחדש את מדיניות המסים כלפי תושבי ירושלים.",
+]
+EDIT_NOTES = {2: (1, "ראו כהן, ירושלים העות'מאנית, עמ' 41."), 4: (2, "על הקונסוליות ראו המאמר הסמוך, עמ' 12.")}
+
+def build_edit_docx(when):
+    import zipfile
+    d = Document()
+    d.core_properties.created = d.core_properties.modified = when
+    d.core_properties.author = "פרופ' כהן"
+    d.core_properties.title = "מאמר על ירושלים"
+    for i, t in enumerate(EDIT_PARAS, 1):
+        p = rtl_par(d, t)
+        if i in EDIT_NOTES:
+            r = OxmlElement("w:r")
+            rPr = OxmlElement("w:rPr"); va = OxmlElement("w:vertAlign"); va.set(qn("w:val"), "superscript"); rPr.append(va); r.append(rPr)
+            ref = OxmlElement("w:footnoteReference"); ref.set(qn("w:id"), str(EDIT_NOTES[i][0])); r.append(ref)
+            p._p.append(r)
+    tbl = d.add_table(rows=3, cols=3)
+    tbl.style = "Table Grid"
+    for r, row in enumerate([("שנה", "אירוע", "מקור"), ("1517", "הכיבוש העות'מאני", "כהן"), ("1538", "בניית החומות", "לוי")]):
+        for c, text in enumerate(row):
+            tbl.cell(r, c).text = text
+    b = io.BytesIO(); d.save(b)
+    W = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"'
+    notes = ['<w:footnote w:type="separator" w:id="-1"><w:p><w:r><w:separator/></w:r></w:p></w:footnote>',
+             '<w:footnote w:type="continuationSeparator" w:id="0"><w:p><w:r><w:continuationSeparator/></w:r></w:p></w:footnote>']
+    for _, (fid, text) in sorted(EDIT_NOTES.items(), key=lambda kv: kv[1][0]):
+        notes.append(f'<w:footnote w:id="{fid}"><w:p><w:pPr><w:bidi/></w:pPr><w:r><w:rPr><w:vertAlign w:val="superscript"/></w:rPr><w:footnoteRef/></w:r>'
+                     f'<w:r><w:rPr><w:rtl/></w:rPr><w:t xml:space="preserve"> {text}</w:t></w:r></w:p></w:footnote>')
+    footnotes = f'<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:footnotes {W}>' + "".join(notes) + "</w:footnotes>"
+    out = io.BytesIO()
+    with zipfile.ZipFile(io.BytesIO(b.getvalue())) as zin, zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as zout:
+        for item in zin.infolist():
+            data = zin.read(item.filename)
+            if item.filename == "[Content_Types].xml":
+                data = data.decode().replace("</Types>", '<Override PartName="/word/footnotes.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footnotes+xml"/></Types>').encode()
+            elif item.filename == "word/_rels/document.xml.rels":
+                data = data.decode().replace("</Relationships>", '<Relationship Id="rIdFootnotes1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes" Target="footnotes.xml"/></Relationships>').encode()
+            zout.writestr(item, data)
+        zout.writestr("word/footnotes.xml", footnotes.encode("utf-8"))
+    return out.getvalue()
+
+when_edit = ANCHOR - dt.timedelta(days=3)   # fixed, no rng: appending this file must not shift the seeds of the others
+add("מאמרים/מאמר על ירושלים - לעריכה.docx", build_edit_docx(when_edit), when_edit)
+
 # ---- write
 # Clear the contents, not the directory itself: OUT is often a container mount point (rmtree fails with EBUSY).
 if os.path.exists(OUT):
