@@ -211,7 +211,7 @@ Done when: the property reads back as requested. Simplest of the set; first to b
 VM run (2026-11-28): the rerun passed on build 6062bf20 (0.1.25): on/off read back, result ends `not an undo step (set it back with set_track_changes)`.
 Owner inbox (2026-11-28): "Turn track changes on/off".
 
-### Review the suggested changes                        status: idea
+### Review the suggested changes                        status: built (VM test pending)
 Ask (Hebrew, as he would say it): "בוא נעבור על השינויים המוצעים"
 Also phrased as: "קבל", "דחה", "דלג", "קבל הכל מהמחבר הזה", "מספיק להיום"
 What should happen: like the sorting sitting. `ActiveDocument.Revisions` is enumerated one at a time: type (insert / delete / format), author, date, the changed text with ~10 words of context; the tool selects the revision's `Range` so it is highlighted on screen. He says "קבל" / "דחה" / "דלג" / "קבל הכל מהמחבר הזה" / "מספיק להיום"; `Revision.Accept()` / `Reject()`. Tools: `review_changes_start`, `review_changes_next`, `review_changes_accept`, `review_changes_reject`, `review_changes_skip`, `review_changes_status`; `accept_all_changes` and `reject_all_changes` only after explicit confirmation with the count.
@@ -276,7 +276,7 @@ Owner inbox (2026-11-28): "Copy the paragraph so and so from document so and so 
 
 Design note (2026-11-28, owner + Fable): all editing goes through predefined tools with fixed contracts, never free-form COM scripting by the model (blast radius on his real files and mail, testability, latency, untrusted document text). Every mutating tool acts only on the ActiveDocument identified by full path, takes a backup before the first edit, is undoable, and reads back dictated text before inserting. Regression protection before any of these ships: (1) a direct tool-invocation harness on the VM (run one tool with a JSON input, assert the exact result and the file/Office state, no model), (2) a scenario suite replaying the owner's phone session of 2026-11-28 as text turns asserting tool sequences and end state, not wording, (3) the model version pinned and bumped deliberately.
 
-### Word's Document Recovery pane                       status: idea
+### Word's Document Recovery pane                       status: built (VM test pending)
 Ask (Hebrew, as he would say it): none; Shamash notices it. He may say "וורד מראה משהו משמאל".
 Also phrased as: "מה זה החלון הזה בוורד?"
 What should happen: after a Word crash or power loss, Word opens with the "Document Recovery" pane listing autosaved files; it blocks nothing, but it confuses him and sits there until clicked. Detection, two independent signals: (a) AutoRecover files present (`Application.Options.DefaultFilePath(wdAutoRecoverPath)`, `*.asd`, with their modified times); (b) the pane itself, through the UI Automation tree of the Word window (name "Document Recovery"; the dialog probe does not see it because it is a task pane, not a `#32770` dialog). When seen, the first Word-related reply of the session adds: "וורד מציע לשחזר קובץ ששמרת אוטומטית (X מאתמול). לפתוח את הגרסה המשוחזרת, או לסגור את ההצעה?" On "לפתוח": open the .asd (`Documents.Open`) as a new document next to the original and say both are open; on "לסגור": close the pane (UI Automation Close button, or `CommandBars.ExecuteMso("DocumentRecoveryClose")` if it exists; verify on the VM) and leave the .asd alone. Never delete .asd files.
