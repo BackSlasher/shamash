@@ -162,7 +162,7 @@ Done when: files land in the right folders by voice, copies end up in כפולי
 
 These tasks act on the document he is working in, at the place he put the cursor with the mouse. They come after the finding, sorting and mail tasks above. Every one of them works through the running Word (COM attach only, never start Word) and the `ActiveDocument`.
 
-### Describe the open document                          status: idea
+### Describe the open document                          status: built (VM test pending)
 Ask (Hebrew, as he would say it): "מה פתוח עכשיו?"
 Also phrased as: "איפה אני במסמך?", "באיזה מסמך אני עובד?"
 What should happen: `describe_active_document` attaches to the running Word (never starts one) and reads `ActiveDocument`: name, full path, saved flag, track-changes state, revision count, paragraph count, the paragraph under the cursor (first ~15 words) and the selected text if any. This is the "here" every editing tool below relies on: the cursor he put with the mouse.
@@ -173,7 +173,7 @@ Confirmation needed: none.
 Seed data for the VM: a multi-paragraph .docx open in Word with the cursor placed by script, one variant with a selection and one with tracked changes.
 Done when: with a document open and the cursor in paragraph 3, the tool reports that paragraph's opening words.
 
-### Undo the last edit                                  status: idea
+### Undo the last edit                                  status: built (VM test pending)
 Ask (Hebrew, as he would say it): "תבטל את מה שעשית", "תחזיר את זה כמו שהיה"
 Also phrased as: "בטל", "תחזיר את המסמך לפני השינויים"
 What should happen: `undo_last_edit` calls `ActiveDocument.Undo(n)` (default 1) and says what was undone. Before the FIRST edit of each document in a session, every editing tool takes a backup copy under `%LocalAppData%\Shamash\backups`; `restore_backup` writes `<name> (לפני שמש).docx` next to the original, never overwriting anything.
@@ -184,7 +184,7 @@ Confirmation needed: none for undo; none for restore (it only adds a file).
 Seed data for the VM: a document edited by two tools in a row.
 Done when: undo reverts the last edit only, and restore creates the "(לפני שמש)" copy with the original content without touching the original.
 
-### Paragraph spacing                                   status: idea
+### Paragraph spacing                                   status: built (VM test pending)
 Ask (Hebrew, as he would say it): "תעשה רווח של שורה וחצי"
 Also phrased as: "רווח כפול בכל המסמך", "רווח אחרי פסקה", "תחזיר לרווח רגיל"
 What should happen: scope is the selection if any, else the paragraph under the cursor, else ask "בכל המסמך או רק בפסקה הזאת?". Set `Range.ParagraphFormat.LineSpacingRule` (wdLineSpaceSingle = 0, wdLineSpaceDouble = 2, wdLineSpace1pt5 = 4); "רווח אחרי פסקה" sets `SpaceAfter`. Read the value back after setting.
@@ -196,7 +196,7 @@ Seed data for the VM: a document with a mix of paragraph styles and a table.
 Done when: the rule reads back as set for exactly the scoped paragraphs.
 Owner inbox (2026-11-28): "Change paragraph spacing to 1.5 lines".
 
-### Track changes on/off                                status: idea
+### Track changes on/off                                status: built (VM test pending)
 Ask (Hebrew, as he would say it): "תדליק מעקב שינויים"
 Also phrased as: "תכבה", "מעקב שינויים דולק?"
 What should happen: `ActiveDocument.TrackRevisions` get and set; say the state before and after.
@@ -221,7 +221,7 @@ Done when: a sitting accepts 2, rejects 1, skips 1, stops, and resumes later at 
 Owner inbox (2026-11-28): "let's review all of the suggested changes". Most valuable of the set for an academic.
 Design note (2026-11-28): easy on the Word side, hard on the sitting side. The tool owns the pointer (state file like sort-sessions.json); "קבל" always means the revision highlighted on screen, never one the model remembers. Per-item turns cost ~6 s each, so allow several answers in one turn ("קבל, דחה, קבל" for the next three, applied in order) and group answers ("כל השינויים של דני", "כל שינויי העיצוב") with a count confirmation. Stop and resume across days is expected, not an edge case.
 
-### Add a footnote                                      status: idea
+### Add a footnote                                      status: built (VM test pending)
 Ask (Hebrew, as he would say it): "תוסיף הערת שוליים: ..."
 Also phrased as: "תוסיף הערת שוליים אחרי המילים X"
 What should happen: at the cursor, or after the words he names (Find within the paragraph under the cursor), `Footnotes.Add(Range, Text:=dictated)`. The dictated text is read back before inserting (STT errors in citations are likely); after inserting, the footnote number is spoken.
@@ -245,7 +245,7 @@ Seed data for the VM: a few images with Hebrew names in Pictures, one pair with 
 Done when: the picture is at the cursor with the requested wrapping and size.
 Owner inbox (2026-11-28): "Insert picture so and so here (incl text flow)".
 
-### Insert a special character                          status: idea
+### Insert a special character                          status: built (VM test pending)
 Ask (Hebrew, as he would say it): "תכניס סימן הפסקה"
 Also phrased as: "קו מפריד ארוך", "השם עם נקודה", describing the character in words
 What should happen: the model maps his description to a Unicode character; `insert_text_at_cursor` (`Selection.TypeText`) inserts it after a read-back of the character's name. For Hebrew niqqud, combining marks go AFTER the base letter, and some fonts lack them.

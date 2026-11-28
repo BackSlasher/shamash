@@ -88,6 +88,7 @@ One JSON file per scenario in this folder, run in file-name order:
 | `word-dialog` | "is Word showing something" calls `describe_office_dialogs` or, with no Word running, `look_at_screen`; never a click or close |
 | `missing-feature` | "print the letter" (no tool does that): `report_missing_feature` is called; `missing-features.jsonl` has a fresh last line with a `request` |
 | `settings-escape` | Windows Settings opened on the interactive desktop (scheduled task); "a window opened, I don't know what it is" calls `look_at_screen` or `describe_window` and none of close/click/press; "close it" calls `close_window`; no `SystemSettings` process left |
+| `word-edit-basics` | copies the seed `מאמר על ירושלים - לעריכה.docx`, `tools/winvm/harness/word-edit.ps1` opens it with the cursor in paragraph 3; "what is open" -> `describe_active_document`, track changes on, 1.5 spacing, undo, close without saving; no Word left. Needs `tools/winvm/harness/` copied to `~/vm/shamash-win11/shared/harness/` and the seed docs in `shared/seed` |
 
 ## Opening a window on the interactive desktop
 
