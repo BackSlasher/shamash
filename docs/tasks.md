@@ -187,7 +187,7 @@ Done when: undo reverts the last edit only, and restore creates the "(לפני �
 ### Paragraph spacing                                   status: built (VM test pending)
 Ask (Hebrew, as he would say it): "תעשה רווח של שורה וחצי"
 Also phrased as: "רווח כפול בכל המסמך", "רווח אחרי פסקה", "תחזיר לרווח רגיל"
-What should happen: scope is the selection if any, else the paragraph under the cursor, else ask "בכל המסמך או רק בפסקה הזאת?". Set `Range.ParagraphFormat.LineSpacingRule` (wdLineSpaceSingle = 0, wdLineSpaceDouble = 2, wdLineSpace1pt5 = 4); "רווח אחרי פסקה" sets `SpaceAfter`. Read the value back after setting.
+What should happen: scope is the selection if any, else the paragraph under the cursor, else ask "בכל המסמך או רק בפסקה הזאת?". Set `Range.ParagraphFormat.LineSpacingRule` (wdLineSpaceSingle = 0, wdLineSpace1pt5 = 1, wdLineSpaceDouble = 2; 4 is wdLineSpaceExactly, not one-and-a-half); "רווח אחרי פסקה" sets `SpaceAfter`. Read the value back after setting.
 Touches: the active document.
 Must never: change anything outside the scope he named; touch fonts or text.
 Spoken result: "הרווח בפסקה הוא שורה וחצי, אפשר לבטל".
