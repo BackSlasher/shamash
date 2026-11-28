@@ -2,9 +2,10 @@
 Opens a seed document in Word in the INTERACTIVE session of the VM user (the service attaches to the Word of its own session; a Word
 started straight from ssh lives in session 0 and the tools would say "no document is open in Word") and puts the cursor in paragraph 3.
 
-  tools/winvm/ssh.sh '& "\\host.lan\Data\harness\word-edit.ps1" -Path "C:\Users\shamash\Documents\מאמרים\מאמר על ירושלים - לעריכה.docx"'
+  tools/winvm/ssh.sh 'powershell -NoProfile -ExecutionPolicy Bypass -File "\\host.lan\Data\harness\word-edit.ps1" -Path "C:\Users\shamash\Documents\מאמרים\מאמר על ירושלים - לעריכה.docx"'
   ... -SelectParagraph2   selects paragraph 2 instead (cursor variant "selection")
   ... -TrackOn            opens with track changes on
+  -EvalB64 <base64 of UTF-16LE expr>   same as -Eval without any shell quoting problems (the VM cases use this through ssh)
   -Eval '<expr>'          instead of opening: runs the expression in the interactive session with $w (Word), $d (ActiveDocument) and $s (Selection) set, prints the result
 
 Prints one line: cursor paragraph, selection length, track changes. Copy the harness folder to ~/vm/shamash-win11/shared/harness/ first.
@@ -25,9 +26,9 @@ if (-not $Inner) {
     Copy-Item -Force $PSCommandPath $local
     $out = Join-Path $env:TEMP 'word-edit-inner.out'
     Remove-Item -Force $out -ErrorAction SilentlyContinue
-    $args2 = "-NoProfile -ExecutionPolicy Bypass -File `"$local`" -Path `"$Path`" -Inner" + $(if ($Eval) { ' -EvalB64 ' + [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($Eval)) }) + $(if ($SelectParagraph2) { ' -SelectParagraph2' }) + $(if ($TrackOn) { ' -TrackOn' })
+    $args2 = "-NoProfile -ExecutionPolicy Bypass -File `"$local`" -Path `"$Path`" -Inner" + $(if ($Eval) { ' -EvalB64 ' + [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($Eval)) } elseif ($EvalB64) { ' -EvalB64 ' + $EvalB64 }) + $(if ($SelectParagraph2) { ' -SelectParagraph2' }) + $(if ($TrackOn) { ' -TrackOn' })
     $action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument $args2
-    $principal = New-ScheduledTaskPrincipal -UserId "$env:USERDOMAIN\$env:USERNAME" -LogonType Interactive
+    $principal = New-ScheduledTaskPrincipal -UserId ([Security.Principal.WindowsIdentity]::GetCurrent().Name) -LogonType Interactive
     Register-ScheduledTask -TaskName 'ShamashWordEdit' -Action $action -Principal $principal -Force | Out-Null
     Start-ScheduledTask -TaskName 'ShamashWordEdit'
     for ($i = 0; $i -lt 60; $i++) {

@@ -162,7 +162,7 @@ Done when: files land in the right folders by voice, copies end up in כפולי
 
 These tasks act on the document he is working in, at the place he put the cursor with the mouse. They come after the finding, sorting and mail tasks above. Every one of them works through the running Word (COM attach only, never start Word) and the `ActiveDocument`.
 
-### Describe the open document                          status: built (VM test pending)
+### Describe the open document                          status: tested-vm
 Ask (Hebrew, as he would say it): "מה פתוח עכשיו?"
 Also phrased as: "איפה אני במסמך?", "באיזה מסמך אני עובד?"
 What should happen: `describe_active_document` attaches to the running Word (never starts one) and reads `ActiveDocument`: name, full path, saved flag, track-changes state, revision count, paragraph count, the paragraph under the cursor (first ~15 words) and the selected text if any. This is the "here" every editing tool below relies on: the cursor he put with the mouse.
@@ -183,6 +183,7 @@ Spoken result: "ביטלתי". Every editing tool below must mention "אפשר �
 Confirmation needed: none for undo; none for restore (it only adds a file).
 Seed data for the VM: a document edited by two tools in a row.
 Done when: undo reverts the last edit only, and restore creates the "(לפני שמש)" copy with the original content without touching the original.
+VM run (2026-11-28): undo_last_edit undid half an edit when a tool made several Word undo steps (set_paragraph_spacing with both line spacing and space after, add_footnote: 2 steps each), and does not undo set_track_changes (not on Word's undo stack). Fixed in Core with one Application.UndoRecord per tool call; needs a redeploy and a rerun of cases 3, 5, 6, 6b.
 
 ### Paragraph spacing                                   status: built (VM test pending)
 Ask (Hebrew, as he would say it): "תעשה רווח של שורה וחצי"
@@ -194,6 +195,7 @@ Spoken result: "הרווח בפסקה הוא שורה וחצי, אפשר לבט�
 Confirmation needed: none for a paragraph or selection; before acting for the whole document.
 Seed data for the VM: a document with a mix of paragraph styles and a table.
 Done when: the rule reads back as set for exactly the scoped paragraphs.
+VM run (2026-11-28): setting and read-back passed (paragraph, selection, document, cursor-only and missing-argument errors, table cell), but undo after a call with both line spacing and space after reverted only the space after. Fixed with one undo record per call; needs a redeploy and a rerun of case 3 + 6.
 Owner inbox (2026-11-28): "Change paragraph spacing to 1.5 lines".
 
 ### Track changes on/off                                status: built (VM test pending)
@@ -206,6 +208,7 @@ Spoken result: "מעקב שינויים היה כבוי ועכשיו הוא דו
 Confirmation needed: none.
 Seed data for the VM: a document with tracking off and one with it on.
 Done when: the property reads back as requested. Simplest of the set; first to build.
+VM run (2026-11-28): on/off and read-back passed, but the result said "undo available" and undo_last_edit answered "nothing to undo" (the toggle is not an undo step in Word 2016). Result now says "not an undo step"; needs a redeploy.
 Owner inbox (2026-11-28): "Turn track changes on/off".
 
 ### Review the suggested changes                        status: idea
@@ -231,6 +234,7 @@ Spoken result: "הוספתי הערת שוליים 4, אפשר לבטל".
 Confirmation needed: before acting (the read-back).
 Seed data for the VM: a document with a few existing footnotes and a paragraph with a distinctive phrase.
 Done when: the footnote exists at the right place with the confirmed text and the right number; undo removes it.
+VM run (2026-11-28): placing at the cursor and after_words, numbering and not-found error passed, but undo needed 2 steps per footnote (Footnotes.Add is several undo steps). Fixed with one undo record per call; needs a redeploy and a rerun of case 5 + 6b.
 Owner inbox (2026-11-28): "Add a footnote".
 
 ### Insert a picture                                    status: idea
@@ -245,7 +249,7 @@ Seed data for the VM: a few images with Hebrew names in Pictures, one pair with 
 Done when: the picture is at the cursor with the requested wrapping and size.
 Owner inbox (2026-11-28): "Insert picture so and so here (incl text flow)".
 
-### Insert a special character                          status: built (VM test pending)
+### Insert a special character                          status: tested-vm
 Ask (Hebrew, as he would say it): "תכניס סימן הפסקה"
 Also phrased as: "קו מפריד ארוך", "השם עם נקודה", describing the character in words
 What should happen: the model maps his description to a Unicode character; `insert_text_at_cursor` (`Selection.TypeText`) inserts it after a read-back of the character's name. For Hebrew niqqud, combining marks go AFTER the base letter, and some fonts lack them.

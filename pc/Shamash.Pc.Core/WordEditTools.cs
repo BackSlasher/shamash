@@ -38,8 +38,8 @@ public static class WordEditText
     public static string DocumentTag(string name) => $"document: {name}";
 
     /// <summary>The closing part of every mutation result: the document, the backup note when this call took one (or could not), and the undo hint.</summary>
-    public static string Mutation(string body, string documentName, string backupNote) =>
-        $"{body}; {DocumentTag(documentName)}" + (backupNote.Length > 0 ? $"; {backupNote}" : "") + "; undo available";
+    public static string Mutation(string body, string documentName, string backupNote, bool undoable = true) =>
+        $"{body}; {DocumentTag(documentName)}" + (backupNote.Length > 0 ? $"; {backupNote}" : "") + (undoable ? "; undo available" : "; not an undo step (set it back with set_track_changes)");
 
     public static string Describe(DocFacts f) =>
         $"{DocumentTag(f.Name)}; path: {f.FullPath}; saved: {YesNo(f.Saved)}; track changes: {OnOff(f.TrackChanges)}; revisions: {f.Revisions}; paragraphs: {f.Paragraphs}; " +
@@ -275,6 +275,20 @@ internal static class ActiveWord
         finally { ComInterop.Release(doc, docs, app); }
     }
 
+    /// <summary>Runs <paramref name="f"/> as ONE Word undo step (Application.UndoRecord, Word 2010+): without it Footnotes.Add and two ParagraphFormat assignments are several steps each and "undo" took back half an edit. Falls back to no record when Word refuses.</summary>
+    public static string InUndoRecord(dynamic app, string name, Func<string> f)
+    {
+        dynamic? rec = null;
+        bool started = false;
+        try { rec = app.UndoRecord; rec!.StartCustomRecord(name); started = true; } catch { }
+        try { return f(); }
+        finally
+        {
+            if (started) { try { rec!.EndCustomRecord(); } catch { } }
+            ComInterop.Release(rec);
+        }
+    }
+
     /// <summary>1-based number of the paragraph holding position <paramref name="pos"/>.</summary>
     public static int ParagraphAt(dynamic doc, int pos)
     {
@@ -310,6 +324,9 @@ public abstract class WordEditTool : IAgentTool
     /// <summary>Error text for bad input, null when the input is fine. Runs before any COM call.</summary>
     protected virtual string? Validate(JsonElement input) => null;
 
+    /// <summary>True for tools that change the document through several object-model calls: they run inside one undo record so undo_last_edit steps match tool calls.</summary>
+    protected virtual bool OneUndoStep => false;
+
     [SupportedOSPlatform("windows")]
     protected abstract string Execute(JsonElement input, dynamic app, dynamic doc);
 
@@ -321,7 +338,8 @@ public abstract class WordEditTool : IAgentTool
     }, ct);
 
     [SupportedOSPlatform("windows")]
-    private string Attach(JsonElement input) => OfficeCom.Guarded(() => ActiveWord.With((app, doc) => Execute(input, app, doc)));
+    private string Attach(JsonElement input) => OfficeCom.Guarded(() => ActiveWord.With((app, doc) =>
+        OneUndoStep ? ActiveWord.InUndoRecord(app, "Shamash", (Func<string>)(() => Execute(input, app, doc))) : Execute(input, app, doc)));
 }
 
 public sealed class DescribeActiveDocumentTool : WordEditTool
@@ -422,7 +440,8 @@ public sealed class SetTrackChangesTool : WordEditTool
         doc.TrackRevisions = want;
         bool now = doc.TrackRevisions;
         if (now != want) return $"error: track changes stayed {WordEditText.OnOff(now)} (is the document protected?); document: {ActiveWord.Name(doc)}";
-        return WordEditText.Mutation(WordEditText.TrackResult(was, now), ActiveWord.Name(doc), backup);
+        // Verified on the VM (Word 2016): the toggle is not on Word's undo stack, so undo_last_edit would undo something else or answer "nothing to undo".
+        return WordEditText.Mutation(WordEditText.TrackResult(was, now), ActiveWord.Name(doc), backup, undoable: false);
     }
 }
 
@@ -435,6 +454,8 @@ public sealed class SetParagraphSpacingTool : WordEditTool
     public override string InputSchema => """
         {"type":"object","properties":{"scope":{"type":"string","enum":["selection","paragraph","document"]},"line_spacing":{"type":"string","enum":["single","1.5","double"]},"space_after_points":{"type":"number","description":"Space after each paragraph in points"}},"required":["scope"]}
         """;
+
+    protected override bool OneUndoStep => true;
 
     protected override string? Validate(JsonElement input) => WordEditText.ParseSpacing(input).Error;
 
@@ -492,6 +513,8 @@ public sealed class InsertTextAtCursorTool : WordEditTool
         "Name the character to the user first and call this only after he said yes. Refuses when text is selected (typing would replace it).";
     public override string InputSchema => """{"type":"object","properties":{"text":{"type":"string","description":"The exact text to type, e.g. the character itself"}},"required":["text"]}""";
 
+    protected override bool OneUndoStep => true;
+
     protected override string? Validate(JsonElement input) => WordEditText.ValidateInsert(ToolText.GetString(input, "text")).Error;
 
     [SupportedOSPlatform("windows")]
@@ -522,6 +545,8 @@ public sealed class AddFootnoteTool : WordEditTool
     public override string InputSchema => """
         {"type":"object","properties":{"text":{"type":"string","description":"The footnote text"},"after_words":{"type":"string","description":"Optional: put the footnote reference after these words in the current paragraph"}},"required":["text"]}
         """;
+
+    protected override bool OneUndoStep => true;
 
     protected override string? Validate(JsonElement input) => WordEditText.ValidateFootnote(ToolText.GetString(input, "text"), ToolText.GetString(input, "after_words")).Error;
 

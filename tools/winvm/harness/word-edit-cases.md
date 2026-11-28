@@ -9,11 +9,11 @@ tools/pclink/client.sh ws://127.0.0.1:8777/ --tool <name> '<json>'
 ## Setup
 
 1. Seed docs generated (`tools/seed-docs/gen.py`) into `~/vm/shamash-win11/shared/seed`; copy `tools/winvm/harness/` to `~/vm/shamash-win11/shared/harness/`.
-2. Fresh copy of the document and Word opened in the interactive session, cursor in paragraph 3 (the seed has 6 numbered paragraphs, then a 3x3 table; paragraphs 1 to 6 are the numbered ones, the table cells are 7 to 15; footnotes: 2; revisions: 0):
+2. Fresh copy of the document and Word opened in the interactive session, cursor in paragraph 3 (the seed paragraphs have rule 5 "multiple", space after 10 pt; the seed has 6 numbered paragraphs, then a 3x3 table; paragraphs 1 to 6 are the numbered ones, the table cells are 7 to 9, 11 to 13 and 15 to 17, with the row-end marks 10, 14, 18 and a final empty paragraph 19, so Word counts 19; footnotes: 2; revisions: 0):
 
 ```
 tools/winvm/ssh.sh 'Copy-Item -Force "\\host.lan\Data\seed\מאמרים\מאמר על ירושלים - לעריכה.docx" "$env:USERPROFILE\Documents\מאמרים\"'
-tools/winvm/ssh.sh '& "\\host.lan\Data\harness\word-edit.ps1" -Path "$env:USERPROFILE\Documents\מאמרים\מאמר על ירושלים - לעריכה.docx"'
+tools/winvm/ssh.sh 'powershell -NoProfile -ExecutionPolicy Bypass -File "\\host.lan\Data\harness\word-edit.ps1" -Path "$env:USERPROFILE\Documents\מאמרים\מאמר על ירושלים - לעריכה.docx"'
 ```
 
 Add `-SelectParagraph2` to select paragraph 2 instead, `-TrackOn` to open with tracking on. Expected output: `opened: ...; cursor paragraph: 3; selected characters: 0; track changes: False`.
@@ -24,7 +24,7 @@ Between cases that need a clean state, close Word without saving and rerun both 
 Word's ROT entry is per logon session, so reads go through the same interactive task as the setup (`$w` Word, `$d` ActiveDocument, `$s` Selection):
 
 ```
-tools/winvm/ssh.sh '& "\\host.lan\Data\harness\word-edit.ps1" -Eval "<expression>"'
+tools/winvm/ssh.sh 'powershell -NoProfile -ExecutionPolicy Bypass -File "\\host.lan\Data\harness\word-edit.ps1" -Eval "<expression>"'
 # the remote PowerShell expands $, so escape it: -Eval "`$d.Paragraphs.Item(3).LineSpacingRule"
 ```
 
@@ -36,14 +36,14 @@ Every result below also contains `document: מאמר על ירושלים - לע�
 
 | # | tool | JSON | result starts with | Word state to check |
 | --- | --- | --- | --- | --- |
-| 1 | `describe_active_document` | `{}` | `document: מאמר על ירושלים - לעריכה.docx; path: ` and contains `saved: yes; track changes: off; revisions: 0; paragraphs: 15; cursor: paragraph 3 of 15, starts "3. שלישית, בתקופה"` and ends `selection: none; footnotes: 2` | nothing changes: `$d.Saved` stays True |
-| 1b | `describe_active_document` (opened with `-SelectParagraph2`) | `{}` | contains `cursor: paragraph 2 of 15` and `selection: "2. שנית, הסולטאן סולימאן המפואר`... | none |
-| 2 | `set_track_changes` | `{"on":true}` | `track changes: was off, now on; document:` | `$d.TrackRevisions` is True |
+| 1 | `describe_active_document` | `{}` | `document: מאמר על ירושלים - לעריכה.docx; path: ` and contains `saved: yes; track changes: off; revisions: 0; paragraphs: 19; cursor: paragraph 3 of 19, starts "3. שלישית, בתקופה"` and ends `selection: none; footnotes: 2` | nothing changes: `$d.Saved` stays True |
+| 1b | `describe_active_document` (opened with `-SelectParagraph2`) | `{}` | contains `cursor: paragraph 2 of 19` and `selection: "2. שנית, הסולטאן סולימאן המפואר`... | none |
+| 2 | `set_track_changes` | `{"on":true}` | `track changes: was off, now on; document:` | `$d.TrackRevisions` is True; the result ends `not an undo step (set it back with set_track_changes)` (0.1.25 said `undo available`) |
 | 2b | `set_track_changes` | `{"on":false}` | `track changes: was on, now off; document:` | `$d.TrackRevisions` is False |
-| 3 | `set_paragraph_spacing` | `{"scope":"paragraph","line_spacing":"1.5","space_after_points":6}` | `line spacing: 1.5 (was single), space after: 6 pt (was ` ... `for paragraph 3; document:` | `$d.Paragraphs.Item(3).LineSpacingRule` = 1 and `.SpaceAfter` = 6; paragraphs 2 and 4 unchanged (`.LineSpacingRule` still 0 or as seeded) |
+| 3 | `set_paragraph_spacing` | `{"scope":"paragraph","line_spacing":"1.5","space_after_points":6}` | `line spacing: 1.5 (was multiple), space after: 6 pt (was 10 pt)` ... `for paragraph 3; document:` | `$d.Paragraphs.Item(3).LineSpacingRule` = 1 and `.SpaceAfter` = 6; paragraphs 2 and 4 unchanged (`.LineSpacingRule` still 0 or as seeded) |
 | 3b | `set_paragraph_spacing` | `{"scope":"selection","line_spacing":"double"}` with `-SelectParagraph2` | `line spacing: double (was ` ... `for paragraph 2; document:` | `$d.Paragraphs.Item(2).LineSpacingRule` = 2, paragraph 3 unchanged |
 | 3c | `set_paragraph_spacing` | `{"scope":"selection","line_spacing":"double"}` with the cursor only | `error: nothing is selected; use scope paragraph or document` | nothing changes |
-| 3d | `set_paragraph_spacing` | `{"scope":"document","line_spacing":"single"}` | `line spacing: single (was mixed or ...) for the whole document (15 paragraphs); document:` | every `$d.Paragraphs.Item(k).LineSpacingRule` = 0; fonts and text unchanged |
+| 3d | `set_paragraph_spacing` | `{"scope":"document","line_spacing":"single"}` | `line spacing: single (was mixed or ...) for the whole document (19 paragraphs); document:` | every `$d.Paragraphs.Item(k).LineSpacingRule` = 0 except the table row-end marks 10, 14, 18 which Word leaves at 5; fonts and text unchanged |
 | 3e | `set_paragraph_spacing` | `{"scope":"paragraph"}` | `error: give line_spacing, space_after_points or both` | none |
 | 4 | `insert_text_at_cursor` | `{"text":"©"}` | `inserted "©" at paragraph 3; document:` | `$d.Paragraphs.Item(3).Range.Text` has `©` 10 characters after its start |
 | 4b | `insert_text_at_cursor` with `-SelectParagraph2` | `{"text":"©"}` | `error: text is selected, so typing would replace it` | paragraph 2 text unchanged |
@@ -60,7 +60,7 @@ Every result below also contains `document: מאמר על ירושלים - לע�
 
 ## Things to look at, not assert
 
-- Case 2 / 2b: whether Word puts the track-changes toggle on the undo stack. The tool says `undo available` regardless; if `undo_last_edit` after case 2 answers `nothing to undo` or undoes something else, tell me and the wording changes.
+- Case 2 / 2b (answered 2026-11-28): the toggle is not an undo step in Word 2016; the tool now says so.
 - Case 5: where Word leaves the cursor and the view after `Footnotes.Add` (it may jump to the footnote pane in Draft view).
 - Case 3 with a `Heading`-style paragraph or inside the table: result must still read back.
 - Backups: `%LocalAppData%\Shamash\backups\<yyyyMMdd-HHmmss> מאמר על ירושלים - לעריכה.docx` exists after the first mutation, has the content from before it, and there is exactly one per service run. A second mutation adds no new file and no `backup:` note.

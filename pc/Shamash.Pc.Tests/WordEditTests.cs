@@ -55,6 +55,7 @@ public class WordEditTests
     public void Mutation_NamesDocument_BackupNote_AndUndo()
     {
         Assert.Equal("x; document: a.docx; undo available", WordEditText.Mutation("x", "a.docx", ""));
+        Assert.Equal("x; document: a.docx; not an undo step (set it back with set_track_changes)", WordEditText.Mutation("x", "a.docx", "", undoable: false));
         Assert.Equal("x; document: a.docx; backup: C:\\b\\1 a.docx; undo available", WordEditText.Mutation("x", "a.docx", "backup: C:\\b\\1 a.docx"));
     }
 

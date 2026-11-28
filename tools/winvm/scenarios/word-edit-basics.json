@@ -2,7 +2,7 @@
   "name": "word-edit-basics",
   "setup": [
     "New-Item -Force -ItemType Directory \"$env:USERPROFILE\\Documents\\מאמרים\" | Out-Null; Copy-Item -Force \"\\\\host.lan\\Data\\seed\\מאמרים\\מאמר על ירושלים - לעריכה.docx\" \"$env:USERPROFILE\\Documents\\מאמרים\\\"",
-    "& \"\\\\host.lan\\Data\\harness\\word-edit.ps1\" -Path \"$env:USERPROFILE\\Documents\\מאמרים\\מאמר על ירושלים - לעריכה.docx\""
+    "powershell -NoProfile -ExecutionPolicy Bypass -File \"\\\\host.lan\\Data\\harness\\word-edit.ps1\" -Path \"$env:USERPROFILE\\Documents\\מאמרים\\מאמר על ירושלים - לעריכה.docx\""
   ],
   "turns": [
     {"say": "מה פתוח עכשיו?", "expect_tools": ["describe_active_document"], "expect_result_prefix": {"describe_active_document": "document: "}},
