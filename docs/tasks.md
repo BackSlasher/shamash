@@ -332,7 +332,7 @@ Owner test case (2026-11-28): he opened Copilot by accident, it showed a consent
 
 <!-- Add tasks below. Printing, calendar, reading a PDF aloud, summarising a long document, dictating a letter, renaming files, finding a photo... -->
 
-### Warn when the phone stops charging                  status: idea
+### Warn when the phone stops charging                  status: built (phone test pending)
 Ask (Hebrew, as he would say it): none; this is a background guard, not a request.
 Also phrased as: (the owner asks the PC) "is the phone charging?"
 What should happen: the app watches the battery state; if the phone is unplugged for more than N minutes (say 3) while the assistant is deployed, it shows a large on-screen banner in Hebrew ("הטלפון לא בטעינה, בדוק את הכבל") and says it once aloud; it reports charging state and battery level to the PC in the link hello/heartbeat so the owner can see it in the service log or Status window. Clears itself when power returns.

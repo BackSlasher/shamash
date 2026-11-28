@@ -105,6 +105,7 @@ Sources: `developer.android.com/work/dpc/dedicated-devices/{lock-task-mode,cookb
 - Transcript text size: keep the 24-64 sp auto-size.
 - Maximum listening duration: 120 s.
 - Power button: the app re-wakes the screen (`ScreenKeeper`, wake lock on `ACTION_SCREEN_OFF`), so the phone never sits dark.
+- Not charging: if the phone is unplugged for more than 3 minutes (`ChargingWatchdog.GRACE_MINUTES`) a large yellow banner "הטלפון לא בטעינה, בדוק את הכבל" with the battery percent shows over every screen until power returns, and the bundled clip `res/raw/not_charging.mp3` (made by `tools/phone-clips/gen.sh`) plays once per outage at the current media volume. The hello message also reports battery level and charging to the PC (`docs/link-protocol.md`). Not yet tried on a phone.
 - Regular app, not lock task (midday): the owner will carry the phone to another house and join its Wi-Fi from the Quick Settings drawer, which Android never shows inside lock task. `ShamashConfig.lockTask = false` keeps the status bar enabled and the lock-task allowlist empty; device owner stays for boot-into-app, stay-awake, no keyguard and the microphone grant. To join a Wi-Fi: swipe down from the top (twice if the bar is hidden), tap the Internet tile, pick the network. Full kiosk is one flag away.
 
 ## Build

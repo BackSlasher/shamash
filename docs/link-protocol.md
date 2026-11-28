@@ -8,10 +8,12 @@ types are ignored by both sides. The PC is the only side that talks to ElevenLab
 
 | type | fields | when |
 |---|---|---|
-| `hello` | `sampleRate` (16000), `device` (model string), `mode`: `"conversation"` or absent/`"probe"`, `seconds` (probe only) | first message after connect |
+| `hello` | `sampleRate` (16000), `device` (model string), `mode`: `"conversation"` or absent/`"probe"`, `seconds` (probe only), `battery` (optional, conversation hello, see below) | first message after connect |
 | binary | 4-byte big-endian uint32 `seq`, 8-byte big-endian int64 phone send time (ms since epoch), then raw 16-bit mono little-endian PCM at `sampleRate` (3200 bytes = 100 ms) | while the phone is listening |
 | `end` | – | the user stopped talking (tap again or max duration); no more audio follows |
 | `cancel` | – | the user tapped while the PC was thinking or speaking; the PC stops the pipeline and sends nothing more, then closes |
+
+Battery report: the conversation `hello` carries `"battery": {"level": 0-100, "charging": true|false}` when the phone knows it (`charging` is true while any power source is plugged, `level` is the battery percent). The phone sends no other periodic status message, so the PC learns the battery state once per turn (each turn opens a new socket and sends a new `hello`). The PC ignores a missing or malformed `battery`; it logs `phone: battery 71%, not charging` only when level or charging changed since the last report, shows it in the Status window and passes it on in the home heartbeat (`phone.batteryLevel`, `phone.charging`).
 
 Test aid, text turns: a conversation `hello` may also carry `"text": "<transcript>"`. When it does AND
 the PC setting `allowTextTurns` is true (config.json key, or `SHAMASH_ALLOW_TEXT_TURNS=1`; default false), the PC

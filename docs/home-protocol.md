@@ -62,7 +62,7 @@ Request:
   "turnsToday": 7,
   "usageToday": { "calls": 21, "input": 9000, "cacheWrite": 0, "cacheRead": 120000, "output": 2100 } | null,
   "lastError": { "at": "...", "stage": "llm", "message": "..." } | null,
-  "phone": { "lastSeenAt": "...", "battery": 71, "charging": true } | null,
+  "phone": { "lastSeenAt": "...", "batteryLevel": 71, "charging": true } | null,
   "machine": { "name": "...", "os": "Windows 11 ...", "officeInstalled": true, "indexOk": true } | null
 }
 ```
