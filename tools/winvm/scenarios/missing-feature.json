@@ -1,0 +1,11 @@
+{
+  "name": "missing-feature",
+  "setup": [],
+  "turns": [
+    {"say": "תדפיס לי את המכתב לעירייה", "expect_tools": ["report_missing_feature"]}
+  ],
+  "expect_state": [
+    {"ps": "$f = \"$env:LocalAppData\\Shamash\\missing-features.jsonl\"; if (-not (Test-Path $f)) { 'no file' } else { $j = Get-Content $f -Encoding UTF8 | Where-Object { $_.Trim() } | Select-Object -Last 1 | ConvertFrom-Json; if ($j.request -and ((Get-Date) - [datetime]$j.time).TotalMinutes -lt 10) { 'recorded' } else { 'last line has no fresh request' } }", "equals": "recorded"}
+  ],
+  "teardown": []
+}

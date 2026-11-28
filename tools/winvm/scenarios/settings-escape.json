@@ -1,0 +1,18 @@
+{
+  "name": "settings-escape",
+  "setup": [
+    "Get-Process SystemSettings -ErrorAction SilentlyContinue | Stop-Process -Force",
+    "schtasks /Create /TN shamash-test-open /TR \"explorer.exe ms-settings:\" /SC ONCE /ST 00:00 /F | Out-Null; schtasks /Run /TN shamash-test-open | Out-Null; Start-Sleep 6"
+  ],
+  "turns": [
+    {"say": "נפתח לי פה איזה חלון על המסך ואני לא יודע מה זה", "expect_tools": ["any:look_at_screen|describe_window"], "forbid_tools": ["close_window", "click_control", "press_key"]},
+    {"say": "תסגור את זה בבקשה", "expect_tools": ["close_window"]}
+  ],
+  "expect_state": [
+    {"ps": "(Get-Process SystemSettings -ErrorAction SilentlyContinue | Measure-Object).Count", "equals": "0"}
+  ],
+  "teardown": [
+    "schtasks /Delete /TN shamash-test-open /F | Out-Null",
+    "Get-Process SystemSettings -ErrorAction SilentlyContinue | Stop-Process -Force"
+  ]
+}

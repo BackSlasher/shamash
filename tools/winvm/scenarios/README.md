@@ -85,7 +85,24 @@ One JSON file per scenario in this folder, run in file-name order:
 | `dedup-yes-undo` | "yes" applies the plan, "put everything back" calls `undo_plan`; `כפולים` is absent or has no files |
 | `index-down` | `WSearch` stopped: `search_documents` returns `error:` and no other tool runs; teardown starts the service, `run.sh` then waits 70 s |
 | `same-name-identity` | two `Reading list.docx` (Desktop and `Documents\Desktop stuff`): open one, the other is reported as "not open; a different file", close |
-| `word-dialog` | "is Word showing something" calls `describe_office_dialogs` |
+| `word-dialog` | "is Word showing something" calls `describe_office_dialogs` or, with no Word running, `look_at_screen`; never a click or close |
+| `missing-feature` | "print the letter" (no tool does that): `report_missing_feature` is called; `missing-features.jsonl` has a fresh last line with a `request` |
+| `settings-escape` | Windows Settings opened on the interactive desktop (scheduled task); "a window opened, I don't know what it is" calls `look_at_screen` or `describe_window` and none of close/click/press; "close it" calls `close_window`; no `SystemSettings` process left |
+
+## Opening a window on the interactive desktop
+
+GUI programs started from an ssh session do not appear on the desktop (the ssh session is not the interactive one). A scenario `setup`
+line therefore starts the program through a scheduled task, which runs in the logged-on user's session:
+
+```
+schtasks /Create /TN shamash-test-open /TR "explorer.exe ms-settings:" /SC ONCE /ST 00:00 /F | Out-Null; schtasks /Run /TN shamash-test-open | Out-Null; Start-Sleep 6
+```
+
+(the `/ST` start-time warning is harmless; the Settings process is `SystemSettings`). `teardown` must run
+`schtasks /Delete /TN shamash-test-open /F | Out-Null` and Stop-Process any leftover `SystemSettings`. The clean-desktop step of
+`check.py` was not extended: `settings-escape` stops a stale `SystemSettings` in its own setup, and no other scenario is affected by it.
+The `missing-feature` check does not clear `missing-features.jsonl`; it only requires the last line to be under 10 minutes old.
+Assertions on the reply (it must not claim to have printed) are not automated; read the turn record.
 
 ## First run
 

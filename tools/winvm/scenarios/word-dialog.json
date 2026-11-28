@@ -2,7 +2,7 @@
   "name": "word-dialog",
   "setup": [],
   "turns": [
-    {"say": "וורד מראה משהו על המסך?", "expect_tools": ["describe_office_dialogs"]}
+    {"say": "וורד מראה משהו על המסך?", "expect_tools": ["any:describe_office_dialogs|look_at_screen"], "forbid_tools": ["close_window", "click_control", "press_key"]}
   ],
   "expect_state": [],
   "teardown": []

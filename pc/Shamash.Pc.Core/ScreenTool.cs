@@ -17,6 +17,7 @@ public sealed class LookAtScreenTool(IScreenCapture capture, IDesktopAutomation 
     public string Description =>
         "Takes a screenshot of the whole screen and shows it to you, with the names of the windows that are open. " +
         "Use it when the user describes something on the screen he does not understand, or a tool failed for no clear reason. " +
+        "For an alert that Word, Excel or Outlook is showing, describe_office_dialogs reads the exact text and buttons; use that first when Word is open. " +
         "Only for getting out of unexpected situations; do not use it to work in Word, Excel or Outlook.";
     public string InputSchema => """{"type":"object","properties":{}}""";
 
