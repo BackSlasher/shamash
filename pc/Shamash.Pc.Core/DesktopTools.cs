@@ -30,6 +30,8 @@ public interface IDesktopAutomation
     string? BringToFront(nint hwnd);
     /// <summary>Sends one key from <see cref="DesktopText.Keys"/> to the foreground window. Null on success, else the problem.</summary>
     string? PressKey(string key);
+    /// <summary>Alt plus a letter (a dialog mnemonic) to the foreground window; not offered to the model, used by word_recovery for Word's own question. Null on success.</summary>
+    string? PressAltLetter(char letter) => "Alt+letter is not supported here";
 }
 
 /// <summary>Screenshot of the whole virtual screen, already scaled and PNG-encoded; null when capture is not possible.</summary>

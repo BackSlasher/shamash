@@ -88,6 +88,13 @@ public sealed class UiaDesktopAutomation(ILogger? log = null) : IDesktopAutomati
         }
     }
 
+    public string? PressAltLetter(char letter)
+    {
+        if (!char.IsAsciiLetterUpper(char.ToUpperInvariant(letter))) return $"not a letter: {letter}";
+        try { Keyboard.TypeSimultaneously(VirtualKeyShort.ALT, (VirtualKeyShort)char.ToUpperInvariant(letter)); return null; }
+        catch (Exception e) when (e is not OperationCanceledException) { return $"could not press Alt+{letter}: {e.Message}"; }
+    }
+
     public string? PressKey(string key)
     {
         try

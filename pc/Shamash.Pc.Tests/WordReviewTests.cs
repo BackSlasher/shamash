@@ -485,6 +485,18 @@ public class WordRecoveryTests
     }
 
     [Fact]
+    public void LooksLikeKeepQuestion_ByTitleOwnerAndReadableText()
+    {
+        var q = new WindowInfo(1, "Microsoft Word", 7);
+        Assert.True(WordRecovery.LooksLikeKeepQuestion(q, true, []));                       // NUIDialog: nothing readable, title and owner decide
+        Assert.True(WordRecovery.LooksLikeKeepQuestion(q, true, [("Static", "The Document Recovery task pane contains some recovered files")]));
+        Assert.False(WordRecovery.LooksLikeKeepQuestion(q, true, [("Static", "Do you want to save changes?")]));
+        Assert.False(WordRecovery.LooksLikeKeepQuestion(q, false, []));
+        Assert.False(WordRecovery.LooksLikeKeepQuestion(new WindowInfo(1, "Document1 - Word", 7), true, []));
+        Assert.False(WordRecovery.LooksLikeKeepQuestion(null, true, []));
+    }
+
+    [Fact]
     public void CloseButton_RefusesTheTitleBarCloseThatComesBeforeThePane()
     {
         var ok = new WindowDescription("w", "WINWORD", [El("button", "Save"), El("text", "Document Recovery"), El("button", "סגור")], false);

@@ -163,8 +163,24 @@ public static class WordRecovery
     private static readonly string[] YesPrefixes = ["Yes", "כן"];
     private static readonly string[] OkNames = ["OK", "אישור"];
 
+    /// <summary>
+    /// The question's window, seen on the VM (2026-11-28): a separate top-level window of WINWORD titled just "Microsoft Word" (a document window
+    /// is "name - Word") that UI Automation cannot read (ElementFromHandle times out). So it is recognised by the title, the owner and, when the
+    /// Win32 child controls are readable, their text; answering goes through the keyboard: Alt+Y selects the "Yes, I want to view these files
+    /// later" option by its mnemonic and Enter presses OK.
+    /// </summary>
+    public static bool LooksLikeKeepQuestion(WindowInfo? front, bool ownedByWord, IReadOnlyList<(string Class, string Text)> controls)
+    {
+        if (front is null || !ownedByWord) return false;
+        var title = front.Title.Trim();
+        if (!QuestionTitles.Any(t => string.Equals(title, t, StringComparison.OrdinalIgnoreCase))) return false;
+        return controls.Count == 0 || controls.Any(c => KeepQuestionMarkers.Any(m => c.Text.Contains(m, StringComparison.OrdinalIgnoreCase)));
+    }
+
+    private static readonly string[] QuestionTitles = ["Microsoft Word", "Microsoft Office Word"];
+
     /// <summary>Answers Word's keep-the-files question with "Yes" when it is on screen; returns what was pressed, or null when no such question was found.</summary>
-    private static string? AnswerKeepFiles(IDesktopAutomation auto)
+    private static string? AnswerKeepFiles(IDesktopAutomation auto, Action<int> sleep)
     {
         foreach (var w in auto.Windows().Where(w => IsWordWindow(w, auto)))
         {
@@ -173,7 +189,14 @@ public static class WordRecovery
             if (auto.Click(w.Handle, answer.Ok, "button") is { } p2) return $"chose \"{answer.Yes}\" but could not press {answer.Ok}: {p2}";
             return $"Word asked whether to keep the recovered files; answered \"{answer.Yes}\"";
         }
-        return null;
+        // UI Automation could not read it (the usual case): the modal question is the foreground window of WINWORD.
+        var front = auto.Foreground();
+        var controls = front is not null && OperatingSystem.IsWindows() ? WindowNative.ChildControls(front.Handle) : [];
+        if (!LooksLikeKeepQuestion(front, front is not null && IsWordWindow(front, auto), controls)) return null;
+        if (auto.PressAltLetter('Y') is { } p3) return $"Word asked whether to keep the recovered files but Alt+Y failed: {p3}";
+        sleep(300);
+        if (auto.PressKey("enter") is { } p4) return $"Word asked whether to keep the recovered files; chose Yes but Enter failed: {p4}";
+        return "Word asked whether to keep the recovered files; answered Yes (keyboard: Alt+Y, Enter)";
     }
 
     /// <summary>Runs one action of the word_recovery tool.</summary>
@@ -212,7 +235,7 @@ public static class WordRecovery
             else
             {
                 sleep(700);
-                var answered = AnswerKeepFiles(auto);
+                var answered = AnswerKeepFiles(auto, sleep);
                 if (answered is not null) notes.Add(answered);
                 if (Gone(auto, sleep)) return Closed("UI Automation" + (answered is null ? "" : "; " + answered), dir, state);
                 notes.Add("the pane was still shown after clicking Close");
