@@ -370,6 +370,7 @@ public class WordRecoveryTests
             public bool ClickClosesPane = true;
         public string? ClickProblem;
         public bool WordWindow = true;
+        public bool Unreadable;
         public List<(nint, string, string?)> Clicks = [];
 
         public IReadOnlyList<WindowInfo> Windows() => WordWindow ? [new WindowInfo(1, "מסמך1 - Word", 20), new WindowInfo(2, "x", 30)] : [new WindowInfo(2, "x", 30)];
@@ -379,13 +380,15 @@ public class WordRecoveryTests
         public WindowDescription? Describe(nint hwnd, int max)
         {
             if (hwnd != 1) return new("x", "notepad", [El("button", "Close")], false);
+            if (Unreadable) return null;
             var els = new List<UiElement>();
             if (TitleBarCloseFirst) els.Add(El("button", "Close"));
             els.Add(El("button", "Save"));
             if (Shown) { els.Add(El("text", "Document Recovery")); els.Add(El("listitem", "דוח [Recovered]")); els.Add(El("button", "Close")); }
             return new("מסמך1 - Word", "WINWORD", els, false);
         }
-        public string? Click(nint hwnd, string name, string? kind) { Clicks.Add((hwnd, name, kind)); if (ClickProblem is null && ClickClosesPane) Shown = false; return ClickProblem; }
+        public string? Click(nint hwnd, string name, string? kind) { Clicks.Add((hwnd, name, kind)); if (ClickProblem is null && ClickClosesPane) { if (ModalAfterClick) Unreadable = true; Shown = false; } return ClickProblem; }
+        public bool ModalAfterClick;
         public bool Close(nint hwnd) => true;
         public string? BringToFront(nint hwnd) => null;
         public string? PressKey(string key) => null;
@@ -471,6 +474,17 @@ public class WordRecoveryTests
     }
 
     [Fact]
+    public void KeepFilesAnswer_FindsTheYesOptionAndOkOfWordsQuestion()
+    {
+        var question = new WindowDescription("Microsoft Word", "WINWORD",
+            [El("text", "The Document Recovery task pane contains some recovered files that have not been opened. Would you like to view these files the next time you start Word?"),
+             El("radio", "&Yes, I want to view these files later"), El("radio", "&No, remove the files"), El("button", "OK"), El("button", "Cancel")], false);
+        Assert.Equal(("Yes, I want to view these files later", "OK"), WordRecovery.KeepFilesAnswer(question));
+        Assert.Null(WordRecovery.KeepFilesAnswer(new("Document1 - Word", "WINWORD", [El("text", "Word has recovered the following files"), El("button", "Close")], false)));
+        Assert.Null(WordRecovery.KeepFilesAnswer(question with { Elements = question.Elements.Where(e => e.Kind != "radio").ToList() }));
+    }
+
+    [Fact]
     public void CloseButton_RefusesTheTitleBarCloseThatComesBeforeThePane()
     {
         var ok = new WindowDescription("w", "WINWORD", [El("button", "Save"), El("text", "Document Recovery"), El("button", "סגור")], false);
@@ -540,8 +554,21 @@ public class WordRecoveryTests
         var stuck = new FakeDesk { ClickProblem = "control \"Close\" not found" };
         var h2 = new FakeHost(dir);
         var r2 = WordRecovery.Run("close", h2, stuck, _ => { });
-        Assert.StartsWith("error: the recovery pane is still shown (control \"Close\" not found)", r2);
+        Assert.StartsWith("error: the recovery pane is still shown or unconfirmed (control \"Close\" not found)", r2);
         Assert.Equal(["DocumentRecoveryClose"], h2.Mso);
+    }
+
+    [Fact]
+    public void Run_Close_DoesNotClaimSuccess_WhenWordsWindowGoesUnreadable_AfterTheClick()
+    {
+        using var d = new TempDir();
+        var dir = AsdDir(d, ("a.asd", new DateTime(2026, 11, 27)));
+        var desk = new FakeDesk { ModalAfterClick = true };   // Word's "keep the recovered files?" question is up
+        var r = WordRecovery.Run("close", new FakeHost(dir), desk, _ => { });
+        Assert.StartsWith("error: the recovery pane is still shown or unconfirmed", r);
+        Assert.Contains("nothing was pressed", r);
+        Assert.Null(WordRecovery.PaneVisible(desk));
+        Assert.True(File.Exists(Path.Combine(dir, "a.asd")));
     }
 
     [Fact]
@@ -552,7 +579,7 @@ public class WordRecoveryTests
         var r = WordRecovery.Run("close", new FakeHost(AsdDir(d)), desk, _ => { });
         Assert.Empty(desk.Clicks);
         Assert.Contains("Word's own window", r);
-        Assert.StartsWith("error: the recovery pane is still shown", r);
+        Assert.StartsWith("error: the recovery pane is still shown or unconfirmed", r);
     }
 
     [Fact]

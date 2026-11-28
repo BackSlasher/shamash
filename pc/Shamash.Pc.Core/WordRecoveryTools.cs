@@ -63,10 +63,28 @@ public static class WordRecovery
         if (auto is null) return null;
         try
         {
-            var task = Task.Run(() => auto.Windows().Any(w => IsWordWindow(w, auto)) ? (bool?)(FindPane(auto) is not null) : null);
+            var task = Task.Run(() => LookForPane(auto));
             return task.Wait(timeoutMs) ? task.Result : null;
         }
         catch (Exception e) when (e is AggregateException or InvalidOperationException) { return null; }
+    }
+
+    /// <summary>
+    /// True when a Word window shows the pane, false when every Word window was read and none does, null when there is no Word window or one could not be read.
+    /// A Word window that cannot be read is NOT "no pane": while Word's "keep the recovered files?" question (opened by the pane's Close button) is up, its main window
+    /// answers nothing to UI Automation, and counting that as "pane gone" made <c>close</c> report success with the question still on screen (VM, 2026-11-28).
+    /// </summary>
+    private static bool? LookForPane(IDesktopAutomation auto)
+    {
+        var words = auto.Windows().Where(w => IsWordWindow(w, auto)).ToList();
+        if (words.Count == 0) return null;
+        var unreadable = false;
+        foreach (var w in words)
+        {
+            if (auto.Describe(w.Handle, DescribeElements) is not { } d) { unreadable = true; continue; }
+            if (PaneShown(d)) return true;
+        }
+        return unreadable ? null : false;
     }
 
     /// <summary>The probe the describe tools use; null when there is no UI Automation (they then say nothing).</summary>
@@ -127,6 +145,37 @@ public static class WordRecovery
         return (Clean(d.Elements[close].Name), null);
     }
 
+    /// <summary>
+    /// Closing the pane while it still lists unopened files makes Word ask "would you like to view these files the next time you start Word?"
+    /// with "No, remove the files" preselected (VM, 2026-11-28). The safe answer is the "Yes" option: the autosaved files stay. This finds that
+    /// question in a window description: the "Yes" radio and the OK button to press, or null when the window is something else.
+    /// </summary>
+    public static (string Yes, string Ok)? KeepFilesAnswer(WindowDescription d)
+    {
+        var isQuestion = d.Elements.Any(e => e.Kind == "text" && KeepQuestionMarkers.Any(m => Clean(e.Name).Contains(m, StringComparison.OrdinalIgnoreCase)));
+        if (!isQuestion) return null;
+        var yes = d.Elements.FirstOrDefault(e => e.Kind == "radio" && YesPrefixes.Any(p => Clean(e.Name).StartsWith(p, StringComparison.OrdinalIgnoreCase)));
+        var ok = d.Elements.FirstOrDefault(e => e.Kind == "button" && e.Enabled && OkNames.Any(o => string.Equals(Clean(e.Name), o, StringComparison.OrdinalIgnoreCase)));
+        return yes is null || ok is null ? null : (Clean(yes.Name), Clean(ok.Name));
+    }
+
+    private static readonly string[] KeepQuestionMarkers = ["recovered files", "קבצים משוחזרים"];
+    private static readonly string[] YesPrefixes = ["Yes", "כן"];
+    private static readonly string[] OkNames = ["OK", "אישור"];
+
+    /// <summary>Answers Word's keep-the-files question with "Yes" when it is on screen; returns what was pressed, or null when no such question was found.</summary>
+    private static string? AnswerKeepFiles(IDesktopAutomation auto)
+    {
+        foreach (var w in auto.Windows().Where(w => IsWordWindow(w, auto)))
+        {
+            if (auto.Describe(w.Handle, 60) is not { } d || KeepFilesAnswer(d) is not { } answer) continue;
+            if (auto.Click(w.Handle, answer.Yes, "radio") is { } p1) return $"could not choose \"{answer.Yes}\": {p1}";
+            if (auto.Click(w.Handle, answer.Ok, "button") is { } p2) return $"chose \"{answer.Yes}\" but could not press {answer.Ok}: {p2}";
+            return $"Word asked whether to keep the recovered files; answered \"{answer.Yes}\"";
+        }
+        return null;
+    }
+
     /// <summary>Runs one action of the word_recovery tool.</summary>
     public static string Run(string action, IWordRecoveryHost host, IDesktopAutomation? auto, Action<int>? sleep = null)
     {
@@ -160,15 +209,22 @@ public static class WordRecovery
             var (name, problem) = CloseButton(pane.Description);
             if (name is null) notes.Add(problem!);
             else if (auto.Click(pane.Window.Handle, name, "button") is { } clickProblem) notes.Add(clickProblem);
-            else if (Gone(auto, sleep)) return Closed("UI Automation", dir, state);
-            else notes.Add("the pane was still shown after clicking Close");
+            else
+            {
+                sleep(700);
+                var answered = AnswerKeepFiles(auto);
+                if (answered is not null) notes.Add(answered);
+                if (Gone(auto, sleep)) return Closed("UI Automation" + (answered is null ? "" : "; " + answered), dir, state);
+                notes.Add("the pane was still shown after clicking Close");
+            }
         }
         try
         {
             if (host.TryExecuteMso(CloseMso) && Gone(auto, sleep)) return Closed("CommandBars", dir, state);
         }
         catch (Exception e) when (e is not OperationCanceledException) { notes.Add($"CommandBars: {e.GetType().Name}"); }
-        return $"error: the recovery pane is still shown ({string.Join("; ", notes)}); ask the user to press the Close button of the pane on screen; autosaved files: {state.Files.Count}";
+        if (PaneVisible(auto) is null) notes.Add("Word's window cannot be read now, which usually means Word is asking whether to keep the recovered files; its default answer, \"No, remove the files\", would delete them, so nothing was pressed");
+        return $"error: the recovery pane is still shown or unconfirmed ({string.Join("; ", notes)}); ask the user to press the Close button of the pane on screen; autosaved files: {state.Files.Count}";
     }
 
     /// <summary>Re-detects up to three times, half a second apart, until the pane is gone.</summary>
