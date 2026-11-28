@@ -33,36 +33,12 @@ HOME_ENROL_TOKEN=dev HOME_DATA_DIR=/tmp/shamash-home .venv/bin/python -m app.mai
 Docker: `docker build -t shamash-home home && docker run -p 8000:8000 -p 8001:8001 -e HOME_ENROL_TOKEN=dev -v shamash-home:/data shamash-home`.
 CI (`.github/workflows/home-image.yml`) pushes `ghcr.io/backslasher/shamash-home:sha-<short>` and `:latest` on changes to `home/**`.
 
-## Athena `services.nix` draft
+## Deployment on Athena
 
-`modules/fort/caddy.nix` reads `proxy` as a **single attrset** (`host`, `port`, `certs`, `public`) and the upstream is
-`http://<service name>:<port>`. One service therefore cannot publish two hostnames/ports, so the shape below (a list)
-does not work as-is. Either:
-
-1. Extend `caddy.nix` so `proxy` may be a list (one site per entry, same `reverse_proxy http://${name}:${port}`), then use:
-
-```nix
-shamash-home = {
-  image = "ghcr.io/backslasher/shamash-home:sha-<commit>";
-  volumes = [ "./shamash-home/data:/data" ];
-  env_file = config.sops.templates."shamash-home.env".path;
-  labels = secretsLabel;
-  restart = "unless-stopped";
-  proxy = [ { host = "shamash-api"; port = 8000; public = true; } { host = "shamash"; port = 8001; } ];
-};
-```
-
-2. Or, with no module change, two services off the same image and data directory using `HOME_MODE`
-   (both open the same SQLite file; fine on one host, the write rate is tiny):
-
-```nix
-shamash-home-api = { image = "ghcr.io/backslasher/shamash-home:sha-<commit>"; environment.HOME_MODE = "api";
-  volumes = [ "./shamash-home/data:/data" ]; env_file = config.sops.templates."shamash-home.env".path;
-  labels = secretsLabel; restart = "unless-stopped"; proxy = { host = "shamash-api"; port = 8000; public = true; }; };
-shamash-home-ui = { image = "ghcr.io/backslasher/shamash-home:sha-<commit>"; environment.HOME_MODE = "ui";
-  volumes = [ "./shamash-home/data:/data" ]; env_file = config.sops.templates."shamash-home.env".path;
-  labels = secretsLabel; restart = "unless-stopped"; proxy = { host = "shamash"; port = 8001; }; };
-```
-
-(Check how `services.nix` passes environment variables; `environment` above is a guess.) The sops template must render
-the line `HOME_ENROL_TOKEN=<secret>`. The UI entry keeps the default `certs = [ "person" ]`; the API entry is `public = true`.
+Running since 2026-11-28 as the fort compose service `shamash-home` (`modules/fort/services.nix` in the athena-nixos repo):
+one container, both ports. The API is the public site `shamash-api.fort.backslasher.net` (`proxy = { host = "shamash-api";
+port = 8000; public = true; }`); the UI is the `external` Caddy entry `shamash.fort.backslasher.net` →
+`http://shamash-home:8001`, behind the household client certificate. The enrolment token is the sops secret
+`shamash-home/enrol_token`, rendered into the `shamash-home.env` template together with `HOME_RETENTION_DAYS=365`.
+Image pin: `ghcr.io/backslasher/shamash-home:sha-<short>`; bump it in services.nix, `./check.sh`, commit, push,
+`athena-deploy`. A deploy that changes a rendered secret recreates every secrets-labelled fort container.
