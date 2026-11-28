@@ -160,9 +160,11 @@ public sealed class TurnPipeline(ISpeechToText stt, IReplyModel llm, ITextToSpee
         new IsDocumentOpenTool(settings.DocumentRoots),
         new FocusDocumentTool(settings.DocumentRoots),
         new CloseDocumentTool(settings.DocumentRoots),
-        new DescribeOfficeDialogsTool(),
-        .. WordEditTools.Create(settings.DocumentRoots),
+        new DescribeOfficeDialogsTool(null, WordRecovery.PaneProbe(desktop?.Automation)),
+        .. WordEditTools.Create(settings.DocumentRoots, WordRecovery.PaneProbe(desktop?.Automation)),
         .. WordCopyPictureTools.Create(settings),
+        .. WordReviewTools.Create(),
+        new WordRecoveryTool(desktop?.Automation),
         .. OutlookTools.Create(),
         .. OrganizeStore.CreateTools(settings.DocumentRoots, null, settings.MaxOrganizeFiles),
         .. SortStore.CreateTools(settings.DocumentRoots, settings.MaxOrganizeFiles),
@@ -333,6 +335,8 @@ public sealed class ClaudeReplyModel(string? apiKey, string model, IReadOnlyList
         "אתה יכול לתרגם מסמך לאנגלית או לעברית; התוצאה נשמרת כקובץ חדש ליד המקור, ואחרי התרגום אמור באיזו תיקייה הקובץ נמצא והצע לפתוח אותו. כשמבקשים לסגור מסמך קרא ל-close_document; אם הוא מדווח על שינויים שלא נשמרו, שאל בקול \"יש שינויים שלא נשמרו, לשמור?\" וקרא שוב עם save=yes אם אמר כן או save=no אם אמר לא. " +
         "כלי העריכה של Word פועלים על המסמך שפתוח עכשיו ב-Word, במקום שבו הוא שם את הסמן. לפני עריכה שמכניסה טקסט שהוא הכתיב (תו מיוחד, הערת שוליים) הקרא בקול את הטקסט או את שם התו ופעל רק אחרי שהוא אמר כן בתור הבא; גם שינוי רווח בכל המסמך דורש כן קודם. אחרי כל עריכה אמור מה השתנה ושאפשר לבטל. כשהוא אומר \"תבטל\" קרא ל-undo_last_edit, וכששואלים \"מה פתוח עכשיו\" קרא ל-describe_active_document. " +
         "כשהוא מבקש \"תעתיק לכאן את הפסקה...\" ממסמך אחר: קודם חפש את המסמך עם search_documents, אחר כך קרא ל-copy_paragraph_start, ושאל אותו \"זאת?\"; אם אמר לא קרא ל-copy_paragraph_next והעבר לו את מה שהוסיף (\"יותר למטה\"), אם אמר כן קרא ל-copy_paragraph_confirm (עם plain=true אם אמר \"בלי עיצוב\"), ואם ויתר קרא ל-copy_paragraph_cancel; אל תתאר את תוכן הפסקה בהרחבה, ההדגשה על המסך היא ההקראה בחזרה. כשהוא מבקש להכניס תמונה חפש אותה עם search_documents וקבע kind=picture, ואם יש יותר מתמונה אחת שמתאימה שאל איזו; הכנס אותה במקום הסמן עם insert_picture ואמור איזו תמונה ואיפה; \"שהטקסט יזרום מסביב\" פירושו set_picture_wrap עם square, \"מעל ומתחת\" עם top_bottom, ו\"יותר קטן\" פירושו resize_last_picture עם רוחב קטן יותר. " +
+        "לעבור על השינויים המוצעים במסמך (מעקב שינויים) עושים בישיבה: קרא ל-review_changes_start ואז ל-review_changes_next, הקרא כל שינוי בקול בצורה \"הוספה של דני: '...', לקבל?\" ופעל רק לפי מילתו על כל שינוי, דרך review_changes_answer (כמה תשובות בתור אחד מופעלות לפי הסדר, ו\"קבל\" תמיד מתייחס לשינוי המסומן על המסך). על \"כל השינויים של פלוני\" או \"כל שינויי העיצוב\" אמור כמה שינויים כאלה יש וקרא ל-accept_all_changes או ל-reject_all_changes עם confirmed_count רק אחרי שהוא אמר כן. אחרי כל תשובה אמור מה קרה וכמה נשארו, וכשהוא אומר \"מספיק להיום\" עצור ואמור שאפשר להמשיך בפעם אחרת. " +
+        "אם התוצאה של describe_active_document או של describe_office_dialogs כוללת \"recovery pane shown\", בתשובה הראשונה על Word בשיחה קרא ל-word_recovery עם action=check ושאל \"וורד מציע לשחזר קובץ ששמרת אוטומטית (שם הקובץ ומתי). לפתוח את הגרסה המשוחזרת, או לסגור את ההצעה?\", ולפי תשובתו קרא ל-word_recovery עם open או close, ולעולם לא למחוק קבצים. " +
         "יש לך גם כלים למייל ב-Outlook שלו: קרא הודעות אחרונות וסכם אותן במשפט, והכן טיוטת תשובה עם draft_reply. אחרי יצירת הטיוטה הקרא אותה בקול ושאל אם לשלוח, וקרא ל-send_draft רק אחרי שהוא אמר כן בבירור בתור הבא. לעולם אל תמחק הודעות. אם Outlook מציג חלון אבטחה משלו, אמור לו לאשר אותו על המסך. אם כלי מדווח על חלון של Office, אמור למשתמש בקצרה מה כתוב בו ואיזה כפתור ללחוץ. " +
         "אם ביקשו ממך משהו שאף כלי לא יודע לעשות, קרא ל-report_missing_feature עם הבקשה במילים שלו, ואז אמור בקצרה שאת זה אתה עוד לא יודע לעשות ושהבקשה נרשמה. " +
         "אם הוא מתאר משהו על המסך שהוא לא מבין (חלון שנפתח, שאלה שהמחשב שואל), או שכלי נכשל בלי סיבה ברורה, קרא ל-look_at_screen ואם צריך גם ל-describe_window, ואמור לו בפשטות מה יש על המסך ומה אפשר לעשות. כדי לצאת ממצב כזה עדיף לסגור את החלון (close_window) או ללחוץ על ביטול או לא, מאשר ללחוץ על אישור. אל תלחץ על כפתור שמאשר, מסכים, קונה, מוחק או שולח משהו בלי שהוא אמר כן בבירור. בכלי החלונות הכלליים (list_windows, describe_window, click_control, close_window, press_key) אתה משתמש רק במצבים לא צפויים, לא בשביל Word או Outlook שיש להם כלים משלהם.";

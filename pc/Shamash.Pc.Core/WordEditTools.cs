@@ -342,7 +342,7 @@ public abstract class WordEditTool : IAgentTool
         OneUndoStep ? ActiveWord.InUndoRecord(app, "Shamash", (Func<string>)(() => Execute(input, app, doc))) : Execute(input, app, doc)));
 }
 
-public sealed class DescribeActiveDocumentTool : WordEditTool
+public sealed class DescribeActiveDocumentTool(Func<bool>? recoveryPane = null) : WordEditTool
 {
     public override string Name => "describe_active_document";
     public override string Description =>
@@ -370,7 +370,7 @@ public sealed class DescribeActiveDocumentTool : WordEditTool
             ComInterop.Release(all);
             var facts = new DocFacts((string)doc.Name, (string)doc.FullName, (bool)doc.Saved, (bool)doc.TrackRevisions, (int)revs.Count, total,
                 ActiveWord.ParagraphAt(doc, start), (string)pr.Text, selected, (int)notes.Count);
-            return WordEditText.Describe(facts);
+            return WordEditText.Describe(facts) + WordRecovery.Note(recoveryPane);
         }
         finally { ComInterop.Release(sr, notes, revs, pr, p, paras, sel); }
     }
@@ -588,9 +588,9 @@ public sealed class AddFootnoteTool : WordEditTool
 
 public static class WordEditTools
 {
-    public static IEnumerable<IAgentTool> Create(IReadOnlyList<string> roots) =>
+    public static IEnumerable<IAgentTool> Create(IReadOnlyList<string> roots, Func<bool>? recoveryPane = null) =>
     [
-        new DescribeActiveDocumentTool(),
+        new DescribeActiveDocumentTool(recoveryPane),
         new UndoLastEditTool(),
         new RestoreBackupTool(roots),
         new SetTrackChangesTool(),

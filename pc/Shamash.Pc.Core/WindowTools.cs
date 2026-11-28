@@ -422,7 +422,7 @@ public static class DialogProbe
 }
 
 /// <summary>The tool form of <see cref="DialogProbe"/>: what Office dialogs are on screen right now.</summary>
-public sealed class DescribeOfficeDialogsTool(Func<IReadOnlyList<DialogInfo>>? probe = null) : IAgentTool
+public sealed class DescribeOfficeDialogsTool(Func<IReadOnlyList<DialogInfo>>? probe = null, Func<bool>? recoveryPane = null) : IAgentTool
 {
     public string Name => "describe_office_dialogs";
     public string Description => "Reads (does not click) any dialog that Word, Excel or Outlook has on screen: its title, text and buttons. Use it when an Office tool stalls or reports a dialog, so you can tell the user what it says and which button to press.";
@@ -434,7 +434,7 @@ public sealed class DescribeOfficeDialogsTool(Func<IReadOnlyList<DialogInfo>>? p
         try
         {
             var text = DialogText.Format(OfficeCom.ProbeDialogs(probe));
-            return text.Length == 0 ? "no Office dialogs are open" : text;
+            return (text.Length == 0 ? "no Office dialogs are open" : text) + WordRecovery.Note(recoveryPane);
         }
         catch (Exception e) when (e is not OperationCanceledException) { return $"error: {e.GetType().Name}: {e.Message}"; }
     }, ct);
