@@ -564,6 +564,11 @@ internal sealed class ComRevisionDocument(object app, object doc) : IRevisionDoc
         try
         {
             range = r.Range;
+            // The VM's Word opens in Simple Markup: nothing of a revision shows in the text, and a deletion cannot be selected at all
+            // (the selection lands in the Revisions pane, Selection.Text empty). All Markup, inline, makes insertions coloured and
+            // deletions struck through where they are, so the highlight is the change itself.
+            try { dynamic view = _app.ActiveWindow.View; view.RevisionsFilter.Markup = 2; view.RevisionsMode = 1; }
+            catch (Exception e) when (e is Microsoft.CSharp.RuntimeBinder.RuntimeBinderException or System.Runtime.InteropServices.COMException) { }
             range.Select();
             try { win = _app.ActiveWindow; win.ScrollIntoView(range, true); }
             catch (Exception e) when (e is Microsoft.CSharp.RuntimeBinder.RuntimeBinderException or System.Runtime.InteropServices.COMException) { }

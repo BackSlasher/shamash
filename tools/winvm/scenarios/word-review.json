@@ -2,7 +2,7 @@
   "name": "word-review",
   "setup": [
     "New-Item -Force -ItemType Directory \"$env:USERPROFILE\\Documents\\מאמרים\" | Out-Null; Copy-Item -Force \"\\\\host.lan\\Data\\seed\\מאמרים\\מאמר עם הערות עורך.docx\" \"$env:USERPROFILE\\Documents\\מאמרים\\\"",
-    "& \"\\\\host.lan\\Data\\harness\\word-edit.ps1\" -Path \"$env:USERPROFILE\\Documents\\מאמרים\\מאמר עם הערות עורך.docx\""
+    "powershell -NoProfile -ExecutionPolicy Bypass -File \"\\\\host.lan\\Data\\harness\\word-edit.ps1\" -Path \"$env:USERPROFILE\\Documents\\מאמרים\\מאמר עם הערות עורך.docx\""
   ],
   "turns": [
     {
@@ -30,12 +30,21 @@
       }
     },
     {
-      "say": "דחה, דלג",
+      "say": "דחה",
       "expect_tools": [
         "review_changes_answer"
       ],
       "expect_result_prefix": {
-        "review_changes_answer": "rejected; skipped; "
+        "review_changes_answer": "rejected; "
+      }
+    },
+    {
+      "say": "דלג",
+      "expect_tools": [
+        "review_changes_answer"
+      ],
+      "expect_result_prefix": {
+        "review_changes_answer": "skipped; "
       }
     },
     {
@@ -48,7 +57,7 @@
       ]
     },
     {
-      "say": "תסגור את המסמך בלי לשמור",
+      "say": "תסגור את המסמך בלי לשמור, גם אם התשובות שנתתי יאבדו",
       "expect_tools": [
         "close_document"
       ]

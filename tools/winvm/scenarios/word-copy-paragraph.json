@@ -4,7 +4,7 @@
     "New-Item -Force -ItemType Directory \"$env:USERPROFILE\\Documents\\מאמרים\" | Out-Null; Copy-Item -Force \"\\\\host.lan\\Data\\seed\\מאמרים\\מאמר על ירושלים - לעריכה.docx\" \"$env:USERPROFILE\\Documents\\מאמרים\\\"",
     "if (-not (Test-Path \"$env:USERPROFILE\\Documents\\מאמרים\\ירושלים בתקופה העות'מאנית.docx\")) { Copy-Item -Force \"\\\\host.lan\\Data\\seed\\מאמרים\\ירושלים בתקופה העות'מאנית.docx\" \"$env:USERPROFILE\\Documents\\מאמרים\\\"; Start-Sleep 75 }",
     "(Get-FileHash \"$env:USERPROFILE\\Documents\\מאמרים\\ירושלים בתקופה העות'מאנית.docx\").Hash | Set-Content \"$env:TEMP\\copy-source.hash\"",
-    "& \"\\\\host.lan\\Data\\harness\\word-edit.ps1\" -Path \"$env:USERPROFILE\\Documents\\מאמרים\\מאמר על ירושלים - לעריכה.docx\""
+    "powershell -NoProfile -ExecutionPolicy Bypass -File \"\\\\host.lan\\Data\\harness\\word-edit.ps1\" -Path \"$env:USERPROFILE\\Documents\\מאמרים\\מאמר על ירושלים - לעריכה.docx\""
   ],
   "turns": [
     {

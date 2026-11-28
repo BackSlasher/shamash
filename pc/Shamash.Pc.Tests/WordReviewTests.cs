@@ -428,6 +428,8 @@ public class WordRecoveryTests
     [Theory]
     [InlineData("text", "Document Recovery", true)]
     [InlineData("text", "שחזור מסמכים", true)]
+    [InlineData("text", "Word has recovered the following files. Save the ones you wish to keep. Available Files", true)]
+    [InlineData("text", "Recovered Word has recovered files that you might want to keep.", false)]   // the Start screen's offer is not the pane
     [InlineData("button", "document recovery options", true)]
     [InlineData("listitem", "ספר [Recovered]", true)]
     [InlineData("listitem", "ספר", false)]
@@ -482,6 +484,16 @@ public class WordRecoveryTests
     }
 
     [Fact]
+    public void CloseButton_OnTheVmsRealOrder_ClicksThePanesCloseNotTheTitleBars()
+    {
+        var real = new WindowDescription("Document1 - Word", "WINWORD",
+            [El("text", "Word has recovered the following files. Save the ones you wish to keep. Available Files"), El("link", "Which file do I want to save?"), El("button", "Close"),
+             El("listitem", "x.docx"), El("button", "Minimize"), El("button", "Close")], false);
+        Assert.Equal(("Close", null), WordRecovery.CloseButton(real));
+        Assert.True(WordRecovery.PaneShown(real));
+    }
+
+    [Fact]
     public void Run_Check_ReportsPaneAndFiles_NotRunningIsAnError()
     {
         using var d = new TempDir();
@@ -497,7 +509,7 @@ public class WordRecoveryTests
         var host = new FakeHost(AsdDir(d, ("old.asd", new DateTime(2026, 11, 20)), ("new.asd", new DateTime(2026, 11, 27, 21, 5, 0))));
         var r = WordRecovery.Run("open", host, new FakeDesk());
         Assert.Equal([Path.Combine(d.Path, "new.asd")], host.Opened);
-        Assert.Equal("opened the autosaved file \"new.asd\" (2026-11-27 21:05) as a new document \"AutoRecovery save of דוח.asd\"; the original and the recovered version are both open; the autosaved file was not changed", r);
+        Assert.Equal("opened the autosaved file \"new.asd\" (2026-11-27 21:05) as a new document \"AutoRecovery save of דוח.asd\"; it is a separate read-only document; the original file and the autosaved file were not changed", r);
         Assert.StartsWith("error: no autosaved files found", WordRecovery.Run("open", new FakeHost(d.Path + "/nothing"), new FakeDesk()));
     }
 

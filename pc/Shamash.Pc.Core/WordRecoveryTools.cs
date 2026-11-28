@@ -28,7 +28,8 @@ public static class WordRecovery
     public const string CloseMso = "DocumentRecoveryClose";
     public const string PaneShownNote = "recovery pane shown";
     public const int DescribeElements = 400;
-    public static readonly string[] PaneNames = ["Document Recovery", "שחזור מסמכים"];
+    // Word 2016 en-US names the pane by its intro text (no element is titled "Document Recovery"; the list items are plain file names), seen on the VM 2026-11-28.
+    public static readonly string[] PaneNames = ["Document Recovery", "שחזור מסמכים", "Word has recovered the following files"];
     public static readonly string[] CloseNames = ["Close", "סגור"];
     private static readonly string[] ListMarkers = ["[Original]", "[Recovered]", "[מקורי]", "[משוחזר]"];
 
@@ -141,7 +142,7 @@ public static class WordRecovery
             {
                 if (Newest(state.Files) is not { } newest) return $"error: no autosaved files found; {Format(state)}";
                 var name = host.OpenAutosaved(newest.Path);
-                return $"opened the autosaved file \"{System.IO.Path.GetFileName(newest.Path)}\" ({DateText(newest.Modified)}) as a new document \"{name}\"; the original and the recovered version are both open; the autosaved file was not changed";
+                return $"opened the autosaved file \"{System.IO.Path.GetFileName(newest.Path)}\" ({DateText(newest.Modified)}) as a new document \"{name}\"; it is a separate read-only document; the original file and the autosaved file were not changed";
             }
             default:
                 return Close(state, dir, host, auto, sleep);
@@ -214,7 +215,11 @@ internal sealed class ComRecoveryHost : IWordRecoveryHost
             doc = docs.Open(FileName: path, ConfirmConversions: false, ReadOnly: true, AddToRecentFiles: false);
             return (string)doc.Name;
         }
-        finally { ComInterop.Release(doc, docs, app); }
+        finally
+        {
+            // One call per object and cast to object: a dynamic argument is bound at run time, and binding an RCW a tool released already (a document it found itself) throws.
+            ComInterop.Release((object?)doc); ComInterop.Release((object?)docs); ComInterop.Release((object?)app);
+        }
     });
 
     public bool TryExecuteMso(string idMso) => OfficeCom.RunSta(() =>

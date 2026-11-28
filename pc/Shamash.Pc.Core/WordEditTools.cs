@@ -272,7 +272,11 @@ internal static class ActiveWord
             doc = app.ActiveDocument;
             return f(app, doc);
         }
-        finally { ComInterop.Release(doc, docs, app); }
+        finally
+        {
+            // One call per object and cast to object: a dynamic argument is bound at run time, and binding an RCW a tool released already (a document it found itself) throws.
+            ComInterop.Release((object?)doc); ComInterop.Release((object?)docs); ComInterop.Release((object?)app);
+        }
     }
 
     /// <summary>Runs <paramref name="f"/> as ONE Word undo step (Application.UndoRecord, Word 2010+): without it Footnotes.Add and two ParagraphFormat assignments are several steps each and "undo" took back half an edit. Falls back to no record when Word refuses.</summary>
@@ -368,9 +372,13 @@ public sealed class DescribeActiveDocumentTool(Func<bool>? recoveryPane = null) 
             dynamic all = doc.Paragraphs;
             int total = all.Count;
             ComInterop.Release(all);
-            var facts = new DocFacts((string)doc.Name, (string)doc.FullName, (bool)doc.Saved, (bool)doc.TrackRevisions, (int)revs.Count, total,
+            // TrackRevisions cannot be read on a read-only document (0x800A11FD): the source of a paragraph copy is one, and it is in front while the model looks.
+            var track = false; var readOnly = false;
+            try { track = (bool)doc.TrackRevisions; }
+            catch (Exception e) when (e is System.Runtime.InteropServices.COMException or Microsoft.CSharp.RuntimeBinder.RuntimeBinderException) { readOnly = true; }
+            var facts = new DocFacts((string)doc.Name, (string)doc.FullName, (bool)doc.Saved, track, (int)revs.Count, total,
                 ActiveWord.ParagraphAt(doc, start), (string)pr.Text, selected, (int)notes.Count);
-            return WordEditText.Describe(facts) + WordRecovery.Note(recoveryPane);
+            return WordEditText.Describe(facts) + (readOnly ? "; read-only document, track changes not readable" : "") + WordRecovery.Note(recoveryPane);
         }
         finally { ComInterop.Release(sr, notes, revs, pr, p, paras, sel); }
     }

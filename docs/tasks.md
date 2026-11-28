@@ -223,6 +223,7 @@ Seed data for the VM: a docx with ~8 tracked revisions by two authors (add to `t
 Done when: a sitting accepts 2, rejects 1, skips 1, stops, and resumes later at the skipped one.
 Owner inbox (2026-11-28): "let's review all of the suggested changes". Most valuable of the set for an academic.
 Design note (2026-11-28): easy on the Word side, hard on the sitting side. The tool owns the pointer (state file like sort-sessions.json); "קבל" always means the revision highlighted on screen, never one the model remembers. Per-item turns cost ~6 s each, so allow several answers in one turn ("קבל, דחה, קבל" for the next three, applied in order) and group answers ("כל השינויים של דני", "כל שינויי העיצוב") with a count confirmation. Stop and resume across days is expected, not an edge case.
+VM run (2026-11-28): R1 to R15 and the `word-review` scenario passed on build cac39739 (0.1.25); the deletion highlight is invisible in the VM's Simple Markup view (fixed in the source, needs redeploy and one look), so the status stays until that is checked.
 
 ### Add a footnote                                      status: tested-vm
 Ask (Hebrew, as he would say it): "תוסיף הערת שוליים: ..."
@@ -237,7 +238,7 @@ Done when: the footnote exists at the right place with the confirmed text and th
 VM run (2026-11-28): the rerun passed on build 6062bf20 (0.1.25): footnote at the cursor and after_words each undone in one step.
 Owner inbox (2026-11-28): "Add a footnote".
 
-### Insert a picture                                    status: built (VM test pending)
+### Insert a picture                                    status: tested-vm
 Ask (Hebrew, as he would say it): "תכניס כאן את התמונה של ..."
 Also phrased as: "שהטקסט יזרום מסביב", "מעל ומתחת", "יותר קטן"
 What should happen: `search_documents` needs image kinds (jpg/png/tif) and the Pictures folder as a root; then `InlineShapes.AddPicture(path)` at the cursor. "שהטקסט יזרום מסביב" converts it to a Shape with `WrapFormat.Type` = wdWrapSquare (0) or wdWrapTight (1); "מעל ומתחת" = wdWrapTopBottom (4); "יותר קטן" uses `ScaleWidth` / `ScaleHeight`.
@@ -248,6 +249,7 @@ Confirmation needed: before acting when more than one picture matches.
 Seed data for the VM: a few images with Hebrew names in Pictures, one pair with similar names.
 Done when: the picture is at the cursor with the requested wrapping and size.
 Owner inbox (2026-11-28): "Insert picture so and so here (incl text flow)".
+VM run (2026-11-28): all picture cases (search, insert inline and floating, wrap, cm read-back, undo, selected picture) and the `word-picture` scenario passed on build cac39739 (0.1.25).
 
 ### Insert a special character                          status: tested-vm
 Ask (Hebrew, as he would say it): "תכניס סימן הפסקה"
@@ -275,6 +277,7 @@ Done when: the wrong candidate is rejected and the next one highlighted; the cho
 Owner inbox (2026-11-28): "Copy the paragraph so and so from document so and so here". Owner note (2026-11-28): the model can push back with "let's spot the paragraph together": switch to that document, mark the paragraph, ask "is that it".
 
 Design note (2026-11-28, owner + Fable): all editing goes through predefined tools with fixed contracts, never free-form COM scripting by the model (blast radius on his real files and mail, testability, latency, untrusted document text). Every mutating tool acts only on the ActiveDocument identified by full path, takes a backup before the first edit, is undoable, and reads back dictated text before inserting. Regression protection before any of these ships: (1) a direct tool-invocation harness on the VM (run one tool with a JSON input, assert the exact result and the file/Office state, no model), (2) a scenario suite replaying the owner's phone session of 2026-11-28 as text turns asserting tool sequences and end state, not wording, (3) the model version pinned and bumped deliberately.
+VM run (2026-11-28): on build cac39739 every copy call ended in an InvalidComObjectException (shared COM objects released twice); highlight, session file, plain and formatted paste, one undo, source hash and `Saved` were fine; `word-copy-paragraph` failed. Fixed in the source with unit tests, needs redeploy and a rerun.
 
 ### Word's Document Recovery pane                       status: built (VM test pending)
 Ask (Hebrew, as he would say it): none; Shamash notices it. He may say "וורד מראה משהו משמאל".
@@ -287,6 +290,7 @@ Confirmation needed: before acting (either choice is his).
 Seed data for the VM: kill WINWORD with a modified unsaved document open, then start Word; the pane appears. Test tooling must stop using Stop-Process on Word for cleanup (use `Application.Quit(SaveChanges:=0)`), so snapshots and runs do not carry this pane by accident.
 Done when: with the pane up, the reply mentions it; "לסגור" removes it and the .asd survives; "לפתוח" opens the recovered copy without touching the original.
 Owner note (2026-11-28): the agent session left Word open with the recovery pane; special-case it ("you have files pending, should we recover them?").
+VM run (2026-11-28): after a real crash Word 2016 shows its Start screen; after "Show Recovered Files" the pane is up but the tools did not recognise it (no element named "Document Recovery"); `open` worked, `close` and the note were not exercised. Fixed in the source, needs redeploy and a second crash.
 
 ### Phone feedback and test tooling
 

@@ -76,10 +76,10 @@ Extra seed: `מאמרים/ירושלים בתקופה העות'מאנית.docx` 
 | 9c | `copy_paragraph_next` | `{}` | `no more candidates; ask him for other words or the paragraph number` | selection unchanged (still paragraph 4) |
 | 9d | `copy_paragraph_next` | `{"hint":"יותר למעלה"}` | `candidate 1 of 2 in` ... `paragraph 2 starts` | selection back on paragraph 2 |
 | 9e | `copy_paragraph_next` | `{"hint":"הפסקה עם הקונסוליות"}` | `candidate 1 of 1 in` ... `paragraph 3 starts "3. הקונסוליות` | selection is paragraph 3; the list is now just that one |
-| 10 | `copy_paragraph_confirm` (after 9d, paragraph 2 highlighted) | `{}` | `pasted paragraph 2 of "ירושלים בתקופה העות'מאנית.docx" into "מאמר על ירושלים - לעריכה.docx" at paragraph 3; document: מאמר על ירושלים - לעריכה.docx;` ... `; undo available` | `$d = $w.ActiveDocument` is the target; `$d.Paragraphs.Count` is 16. The cursor was 10 characters into paragraph 3, so the paste splits it: paragraph 3 reads `3. שלישית,2. הסולטאן סולימאן המפואר בנה...` and paragraph 4 starts `בתקופה העות'מאנית המאוחרת`. The pasted words keep their formatting: `$d.Range($d.Paragraphs.Item(3).Range.Start+13, $d.Paragraphs.Item(3).Range.Start+19).Font.Bold` -eq -1 and `.Italic` -eq -1 and `.Font.Color` is red (the run `הסולטאן`); `$w.Selection.Start` equals `$d.Paragraphs.Item(4).Range.Start`; the source is closed (`$w.Documents.Count` is 1); `Get-FileHash` of the source file = H0; `copy-session.json` is gone |
+| 10 | `copy_paragraph_confirm` (after 9d, paragraph 2 highlighted) | `{}` | `pasted paragraph 2 of "ירושלים בתקופה העות'מאנית.docx" into "מאמר על ירושלים - לעריכה.docx" at paragraph 3; document: מאמר על ירושלים - לעריכה.docx;` ... `; undo available` | `$d = $w.ActiveDocument` is the target; `$d.Paragraphs.Count` is 20 (19 before). The cursor was 10 characters into paragraph 3, so the paste splits it: paragraph 3 reads `3. שלישית,2. הסולטאן סולימאן המפואר בנה...` and paragraph 4 starts `בתקופה העות'מאנית המאוחרת`. The pasted words keep their formatting: `$d.Range($d.Paragraphs.Item(3).Range.Start+13, $d.Paragraphs.Item(3).Range.Start+20).Font.Bold` -eq -1 and `.Italic` -eq -1 and `.Font.Color` is red (the run `הסולטאן`); `$w.Selection.Start` equals `$d.Paragraphs.Item(4).Range.Start`; the source is closed (`$w.Documents.Count` is 1); `Get-FileHash` of the source file = H0; `copy-session.json` is gone |
 | 10b | `copy_paragraph_confirm` after `copy_paragraph_start` with `paragraph_number` 2, `{"plain":true}` | | `pasted paragraph 2 of ... at paragraph 3 without formatting; document:` | same text as case 10 but no bold, italic or colour in the pasted range (`.Font.Bold` -eq 0, `.Font.Color` -eq -16777216), no underline or highlight |
-| 10c | `undo_last_edit` after 10 | `{}` | `undone: 1 step; document: מאמר על ירושלים - לעריכה.docx` | `$d.Paragraphs.Count` is back to 15 and paragraph 3 reads `3. שלישית`: ONE undo removes the whole paste (UndoRecord) |
-| 11 | `copy_paragraph_cancel` after a start | `{}` | `cancelled; back in "מאמר על ירושלים - לעריכה.docx", nothing was pasted` | the editing document is in front, source closed, `$d.Paragraphs.Count` 15, cursor where it was (paragraph 3), `copy-session.json` gone, source hash = H0 |
+| 10c | `undo_last_edit` after 10 | `{}` | `undone: 1 step; document: מאמר על ירושלים - לעריכה.docx` | `$d.Paragraphs.Count` is back to 19 and paragraph 3 reads `3. שלישית`: ONE undo removes the whole paste (UndoRecord) |
+| 11 | `copy_paragraph_cancel` after a start | `{}` | `cancelled; back in "מאמר על ירושלים - לעריכה.docx", nothing was pasted` | the editing document is in front, source closed, `$d.Paragraphs.Count` 19, cursor where it was (paragraph 3), `copy-session.json` gone, source hash = H0 |
 | 11b | `copy_paragraph_cancel` with no copy in progress | `{}` | `no paragraph copy was in progress` | none |
 | 12 | `copy_paragraph_start` | `{"source":"מאמרים/ירושלים בתקופה העות'מאנית.docx","paragraph_number":9}` | `error: the document has 5 paragraphs; there is no paragraph 9` | the source is NOT left open (`$w.Documents.Count` is 1) |
 | 12b | `copy_paragraph_start` | `{"source":"מאמרים/ירושלים בתקופה העות'מאנית.docx","words":"פיל"}` | `error: no paragraph contains "פיל"` | same, no source left open |
@@ -87,6 +87,8 @@ Extra seed: `מאמרים/ירושלים בתקופה העות'מאנית.docx` 
 | 12d | `copy_paragraph_start` | `{"source":"C:\\Windows\\win.ini"}` | `error: path not under a document root` | none |
 | 12e | `copy_paragraph_next` / `copy_paragraph_confirm` with no state | `{}` | `error: no paragraph copy is in progress; call copy_paragraph_start first` | none |
 | 13 | `copy_paragraph_start` with the source ALREADY open (user opened it), then `copy_paragraph_confirm` | `{"source":"...","paragraph_number":2}` | as 9 / 10 | after the confirm the source is STILL open (the tool did not open it) and not dirty |
+
+Run 2026-11-28 on 0.1.25 (cac39739): the tools did their work but every `copy_paragraph_*` call that touched Word answered `error: InvalidComObjectException: Attempt has been made to use a COM object that does not have a backing class factory` (a Core bug, fixed in the source, needs redeploy): `start`, `next` and `cancel` finished their work and then threw while releasing a shared COM object, `confirm` (source opened by the tool, so listed before the target in `Documents`) pasted nothing. Until redeployed, the paste can only be driven when the source was opened BEFORE the target (case 13 order), and results must be read from Word's state, not from the text. Source `Saved` stayed True and the file hash equalled H0 throughout. The Word window of a read-only source also made `describe_active_document` fail on `TrackRevisions` (0x800A11FD); fixed the same way.
 
 Things to look at, not assert: the highlight is visible in the source window after the call (the screenshot is the test); the Word window really comes to the front on a VM with several windows (`Activate`); whether `Range.Select()` scrolls the paragraph into view in a long source; how the paragraph split looks when the cursor is mid-paragraph (cases 10 and 10b paste at the cursor, so paragraph 3 is cut in two and the pasted text joins the first half; a cursor at a paragraph start or on an empty paragraph gives a clean paragraph, which is what he will normally have).
 
@@ -98,9 +100,9 @@ Extra seed: the `תמונות` folder (`הכותל בחורף.png`, `הכותל 
 | --- | --- | --- | --- | --- |
 | 14 | `search_documents` | `{"query":"כותל","kind":"picture"}` | `1. ` with BOTH `הכותל בחורף.png` and `הכותל בקיץ.png` and the folder column `Pictures/תמונות` | none; with `kind` omitted the PNGs are not listed |
 | 14b | `search_documents` | `{"query":"סבתא","kind":"picture"}` | one line `סבתא ברחובות.png` | none |
-| 15 | `insert_picture` | `{"path":"Pictures/תמונות/הכותל בחורף.png"}` | `inserted picture "הכותל בחורף.png" (` ... `cm, wrap: inline) after paragraph 3 starting "3. שלישית, בתקופה`... `; document: מאמר על ירושלים - לעריכה.docx;` ... `; undo available` | `$d.InlineShapes.Count` is 1; `$d.Shapes.Count` is 0; the picture's range start is inside paragraph 3 (`$d.InlineShapes.Item(1).Range.Start` between paragraph 3's start and end); `$d.InlineShapes.Item(1).LinkFormat` is not used (embedded: `$d.InlineShapes.Item(1).Type` is 1, wdInlineShapePicture, not 4 linked); `Get-FileHash` = H1 |
+| 15 | `insert_picture` | `{"path":"Pictures/תמונות/הכותל בחורף.png"}` | `inserted picture "הכותל בחורף.png" (` ... `cm, wrap: inline) after paragraph 3 starting "3. שלישית, בתקופה`... `; document: מאמר על ירושלים - לעריכה.docx;` ... `; undo available` | `$d.InlineShapes.Count` is 1; `$d.Shapes.Count` is 0; the picture's range start is inside paragraph 3 (`$d.InlineShapes.Item(1).Range.Start` between paragraph 3's start and end); `$d.InlineShapes.Item(1).LinkFormat` is not used (embedded: `$d.InlineShapes.Item(1).Type` is 3, wdInlineShapePicture, not 4 linked); `Get-FileHash` = H1 |
 | 15b | `insert_picture` | `{"path":"תמונות/הכותל בקיץ.png","wrap":"square","width_cm":8}` | `inserted picture "הכותל בקיץ.png" (8x5.3 cm, wrap: square) after paragraph 3` | `$d.Shapes.Count` is 1, `$d.Shapes.Item(1).WrapFormat.Type` is 0, `.Width` is about 226.8 (8 cm), `.LockAspectRatio` is -1, `.Height` about 151.2 |
-| 15c | `insert_picture` | `{"path":"הכותל בחורף.png","wrap":"tight"}` / `"top_bottom"` | `... wrap: tight)` / `... wrap: top_bottom)` | `$d.Shapes.Item(1).WrapFormat.Type` is 1 / 4 |
+| 15c | `insert_picture` | `{"path":"תמונות/הכותל בחורף.png","wrap":"tight"}` / `{"path":"Pictures/תמונות/הכותל בחורף.png","wrap":"top_bottom"}` (a bare file name is `error: file not found`: the path is folder/name as `search_documents` shows it) | `... wrap: tight)` / `... wrap: top_bottom)` | `$d.Shapes.Item(1).WrapFormat.Type` is 1 / 4 |
 | 15d | `insert_picture` with `-SelectParagraph2` | `{"path":"תמונות/סבתא ברחובות.png"}` | `inserted picture "סבתא ברחובות.png"` ... `after paragraph 2` | the selected text of paragraph 2 is NOT replaced (paragraph 2 text unchanged except the picture before it); `$d.InlineShapes.Count` is 1 |
 | 15e | `insert_picture` | `{"path":"C:\\Windows\\Web\\Wallpaper\\Windows\\img0.jpg"}` | `error: path not under a document or picture folder` | none |
 | 15f | `insert_picture` | `{"path":"מאמרים/מאמר על ירושלים - לעריכה.docx"}` | `error: not a picture file` | none |
@@ -119,14 +121,14 @@ Extra seed: the `תמונות` folder (`הכותל בחורף.png`, `הכותל 
 Things to look at, not assert: the exact size Word gives a PNG without DPI (the cm figures in cases 15 and 16 are estimates; read the first result and adjust); whether `ConvertToShape` leaves the picture where it was on the page; the behaviour of case 17 when the paragraph is near the bottom of a page.
 ## Review (tracked changes)
 
-Built, not yet verified. Seed: `מאמרים/מאמר עם הערות עורך.docx` (8 revisions: דני לוי has 2 insertions and 2 deletions, רינה כהן 2 insertions, 1 deletion and 1 formatting change; 8 numbered-less paragraphs, the revisions are one per paragraph in order). Copy and open it like the editing seed (`-Path` with this file; the script also sets tracking off):
+Run 2026-11-28 on build cac39739: R1 to R15 all pass (R9 and the highlight of deletions: see its row). Seed: `מאמרים/מאמר עם הערות עורך.docx` (8 revisions: דני לוי has 2 insertions and 2 deletions, רינה כהן 2 insertions, 1 deletion and 1 formatting change; 8 numbered-less paragraphs, the revisions are one per paragraph in order). Copy and open it like the editing seed (`-Path` with this file; the script also sets tracking off):
 
 ```
 tools/winvm/ssh.sh 'Copy-Item -Force "\\host.lan\Data\seed\מאמרים\מאמר עם הערות עורך.docx" "$env:USERPROFILE\Documents\מאמרים\"'
-tools/winvm/ssh.sh '& "\\host.lan\Data\harness\word-edit.ps1" -Path "$env:USERPROFILE\Documents\מאמרים\מאמר עם הערות עורך.docx"'
+tools/winvm/ssh.sh 'powershell -NoProfile -ExecutionPolicy Bypass -File "\\host.lan\Data\harness\word-edit.ps1" -Path "$env:USERPROFILE\Documents\מאמרים\מאמר עם הערות עורך.docx"'
 ```
 
-State checks are `-Eval` calls as above (`$d.Revisions.Count`, `$s.Text`). Restart the PC service (or delete `%LocalAppData%\Shamash\review-sessions.json` while it is stopped) before the first case, so no session from an earlier run exists. Dates in `next` come from the file (2026-11-18 and 2026-11-19) and may read one day off with the VM's time zone.
+State checks are `-Eval` calls as above (`$d.Revisions.Count`, `$s.Text`). The service holds the sessions in memory, so deleting `%LocalAppData%\Shamash\review-sessions.json` while it runs does nothing. To start clean without restarting it: open the seed, `accept_all_changes` with `confirmed_count` 8, `review_changes_start` (a document without revisions drops its session), close the document without saving (`-Eval "`$d.Close(0)"`), delete the copy. A session that survives a closed-without-saving document keeps its pointer: the next `review_changes_answer` without a `review_changes_next` would answer the item the old sitting last showed, so always call `next` first (the model does). Dates in `next` come from the file (2026-11-18 and 2026-11-19) and may read one day off with the VM's time zone.
 
 | # | tool | JSON | result starts with | Word state to check |
 | --- | --- | --- | --- | --- |
@@ -141,7 +143,7 @@ State checks are `-Eval` calls as above (`$d.Revisions.Count`, `$s.Text`). Resta
 | R6b | `accept_all_changes` (no count) | `{"author":"דני"}` | the same error | still 6 |
 | R7 | `accept_all_changes` (right count) | `{"author":"דני","confirmed_count":2}` | `accepted 2 changes by דני; 4 left in the document; document:` ... `; undo available` | `$d.Revisions.Count` = 4; no revision by דני לוי remains: `($d.Revisions | ? { $_.Author -like "*דני*" }).Count` is 0 |
 | R8 | `reject_all_changes` | `{"type":"formatting","confirmed_count":1}` | `rejected 1 change of type formatting; 3 left in the document` | `$d.Revisions.Count` = 3; `$d.Paragraphs.Item(4).Range.Font.Bold` = 0 |
-| R9 | `review_changes_next` | `{}` | `revision 5 of 8: deletion by רינה כהן` | the deleted words are selected |
+| R9 | `review_changes_next` | `{}` | `revision 5 of 8: deletion by רינה כהן` | the deleted words are the current revision: read `$d.Revisions.Item(n).Range.Text` and `$s.Start`/`$s.End` (= that range). The VM's Word opens in Simple Markup, where deleted text is hidden: `$s.Text` reads empty and the selection lands in the Revisions pane (Start/End are then pane offsets, e.g. 147-162), so nothing is visibly highlighted. From the build after 0.1.25 the tool sets All Markup and inline revisions before selecting, so `$s.Text` is the deleted text (needs redeploy; check it) |
 | R10 | `review_changes_answer` | `{"answers":["accept","accept"]}` | `accepted; accepted; remaining 1, next: revision 3 of 8: insertion by רינה כהן` ... `; revisiting the skipped ones` | `$d.Revisions.Count` = 1 |
 | R11 | `review_changes_answer` | `{"answers":["reject"]}` | `rejected; all answered or skipped; document:` ... `; undo available` | `$d.Revisions.Count` = 0; paragraph 3 no longer contains `ושכונות חדשות קמו מחוץ לחומות` |
 | R12 | `review_changes_status` | `{}` | `review: session since ` ... `accepted 5, rejected 3, skipped 0, remaining 0` | none |
@@ -153,23 +155,25 @@ R12 counts: items 1, 5, 6, 7, 8 were accepted (R3, R10, R7), items 2, 3, 4 rejec
 
 ## Recovery pane
 
-Built, not yet verified. Needs a REAL Word crash, so this runs by hand, never inside a scenario (the clean-desktop step of `check.py` never kills a Word that has a window; this section does, once). Copy the editing seed to a throwaway name and open it with `word-edit.ps1 -Path`.
+Run 2026-11-28 on build cac39739 (see the notes after the table). Needs a REAL Word crash, so this runs by hand, never inside a scenario (the clean-desktop step of `check.py` never kills a Word that has a window; this section does, once). Copy the editing seed to a throwaway name and open it with `word-edit.ps1 -Path`.
 
 Provoke the pane:
 
 ```
 # AutoRecover every minute for this Word, a keystroke so the document is dirty
-tools/winvm/ssh.sh '& "\\host.lan\Data\harness\word-edit.ps1" -Eval "`$w.Options.SaveInterval = 1; `$w.Options.DefaultFilePath(5)"'      # prints the AutoRecover folder
-tools/winvm/ssh.sh '& "\\host.lan\Data\harness\word-edit.ps1" -Eval "`$s.TypeText(''x'')"'
+tools/winvm/ssh.sh 'powershell -NoProfile -ExecutionPolicy Bypass -File "\\host.lan\Data\harness\word-edit.ps1" -Eval "`$w.Options.SaveInterval = 1; `$w.Options.DefaultFilePath(5)"'      # prints the AutoRecover folder
+tools/winvm/ssh.sh 'powershell -NoProfile -ExecutionPolicy Bypass -File "\\host.lan\Data\harness\word-edit.ps1" -Eval "`$s.TypeText(''x'')"'
 # wait ~90 s, then look for the autosaved file (the folder printed above)
 tools/winvm/ssh.sh 'Get-ChildItem "$env:APPDATA\Microsoft\Word" -Filter *.asd | Select Name, LastWriteTime'
 # the one place Word is killed: this harness step only (it may wedge ssh, see tools/winvm/README.md; reconnect if so)
 tools/winvm/ssh.sh 'Stop-Process -Name WINWORD -Force'
-# start Word normally in the interactive session (a COM-started Word does not show the pane)
-tools/winvm/ssh.sh 'schtasks /Create /TN shamash-test-open /TR "winword.exe" /SC ONCE /ST 00:00 /F | Out-Null; schtasks /Run /TN shamash-test-open | Out-Null; Start-Sleep 8'
+# start Word normally in the interactive session (a COM-started Word does not show the pane); the task needs the full path ("winword.exe" alone gives 0x80070002)
+tools/winvm/ssh.sh 'schtasks /Create /TN shamash-test-open /TR "C:\PROGRA~1\MICROS~1\Office16\WINWORD.EXE" /SC ONCE /ST 00:00 /F | Out-Null; schtasks /Run /TN shamash-test-open | Out-Null; Start-Sleep 12'
+# Word 2016 starts on its Start screen ("Word has recovered files that you might want to keep" + the link "Show Recovered Files"), not on Document1 with the pane: click that link
+tools/pclink/client.sh ws://127.0.0.1:8777/ --tool click_control '{"window":"Word","name":"Show Recovered Files","kind":"link"}'
 ```
 
-Word starts with an empty `Document1` and the Document Recovery pane on the side. Then:
+After the click Word shows an empty `Document1` and the Document Recovery pane on the side (the Start screen offer is NOT the pane and the tools do not report it). Then:
 
 | # | tool | JSON | result | check |
 | --- | --- | --- | --- | --- |
@@ -185,3 +189,5 @@ Word starts with an empty `Document1` and the Document Recovery pane on the side
 If C5 says `closed (CommandBars)` the UI Automation click did not work and `DocumentRecoveryClose` exists; if it says `error: the recovery pane is still shown (...)`, copy the part in parentheses: `the first Close button belongs to Word's own window` means the title-bar Close comes before the pane in the control order (nothing was clicked), `the recovery pane was not found in the window` or `the list of controls was cut short` means the pane is not reached by the UI Automation walk. Also report C1 and C3 if the pane IS on screen but they say `not shown` (the pane's name is not what the code looks for): then run `describe_window` on the Word window and paste its element list.
 
 Afterwards: close the recovered documents without saving, `-Eval "`$w.Options.SaveInterval = 10"`, and delete the test `.asd` files by hand (the tools never do).
+
+Run 2026-11-28 (build cac39739): the pane was provoked once (`Stop-Process` after one AutoRecover write, `SaveInterval` 1). C1, C2, C3 FAILED: the pane was on screen but the tools said `no Office dialogs are open` / no note / `recovery pane: not shown; autosaved files: 2`. Cause: Word 2016 en-US has no element titled "Document Recovery"; `describe_window` lists the pane as `text: Word has recovered the following files. Save the ones you wish to keep. Available Files`, `link: Which file do I want to save?`, `button: Close` (first in the list, before the title-bar buttons), and the two list items are plain `<name>.docx` without `[Original]`/`[Recovered]`. Fixed in the source (that intro text is now a pane name; unit test with this exact order), needs redeploy. C4 passed (the recovered document opened read-only with the typed `x`, the pane went away, both `.asd` files still there; the result text claimed the original was open too, now reworded). C5 could not be run (the pane was gone after C4 and no second crash was provoked); C7 and C8 passed with no pane. The autosave folder is recursive: 2 `.asd` files (the file in the folder and the `...((Autosaved-...)).asd` in the subfolder), and `check` counted both. The `.asd` files were deleted by hand afterwards, `SaveInterval` reset to 10.

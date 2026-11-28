@@ -238,7 +238,7 @@ internal static class WordDocs
             dynamic d = docs.Item(i);
             string name = d.FullName;
             if (DocumentIdentity.SamePath(name, path)) return d;
-            ComInterop.Release(d);
+            // not released: Word hands out one RCW per document, and a non-matching one may be the ActiveDocument that ActiveWord.With still holds
         }
         return null;
     }
@@ -382,7 +382,7 @@ public sealed class CopyParagraphStartTool(IReadOnlyList<string> roots, string? 
             store.Save(new CopySession(target, cursor, source, openedHere, cands, 0));
             return WordCopyText.Describe(0, cands.Length, Path.GetFileName(source), cands[0], texts[cands[0] - 1]);
         }
-        finally { ComInterop.Release(old, src, docs, sel); }
+        finally { ComInterop.Release(old, src, sel); }   // docs belongs to ActiveWord.With (the same RCW), which releases it
     }
 }
 
@@ -417,7 +417,7 @@ public sealed class CopyParagraphNextTool(IReadOnlyList<string> roots, string? s
             store.Save(prev with { Candidates = nav.Candidates, Index = nav.Index });
             return WordCopyText.Describe(nav.Index, nav.Candidates.Length, Path.GetFileName(prev.Source), paragraph, texts[paragraph - 1]);
         }
-        finally { ComInterop.Release(src, docs); }
+        finally { ComInterop.Release(src); }
     }
 }
 
@@ -487,7 +487,7 @@ public sealed class CopyParagraphConfirmTool(IReadOnlyList<string> roots, string
             store.Clear();
             return WordEditText.Mutation(WordCopyText.Pasted(paragraph, sourceName, targetName, at, plain), targetName, backup) + warning;
         }
-        finally { ComInterop.Release(sel, trange, content, pr, p, ps, tdoc, src, docs); }
+        finally { ComInterop.Release(sel, trange, content, pr, p, ps, tdoc, src); }
     }
 }
 
@@ -514,7 +514,7 @@ public sealed class CopyParagraphCancelTool(IReadOnlyList<string> roots, string?
             store.Clear();
             return WordCopyText.Cancelled(Path.GetFileName(prev.Target), tdoc is not null);
         }
-        finally { ComInterop.Release(tdoc, src, docs); }
+        finally { ComInterop.Release(tdoc, src); }
     }
 }
 

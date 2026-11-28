@@ -154,7 +154,13 @@ def main() -> int:
         if not sc.get("keep_apps"):
             clean_desktop()
         for line in sc.get("setup", []):
-            ps(line)
+            out = ps(line)
+            # a setup line that did not do its job (a script blocked by the execution policy, the interactive task reporting ERROR:)
+            # would otherwise show up only as "no document is open" turns later
+            if out.startswith("ERROR") or "cannot be loaded because running scripts is disabled" in out or "ParserError" in out:
+                failures.append(f"setup {line[:60]!r} failed: {out[:200]}")
+        if failures:
+            sc = {**sc, "turns": [], "expect_state": []}
         for n, turn in enumerate(sc.get("turns", []), 1):
             failures += [f"turn {n}: {e}" for e in run_turn(turn, url, tts)]
         for st in sc.get("expect_state", []):
